@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use fnv::FnvHashMap as HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -56,7 +56,7 @@ pub fn process_and_print(path: impl AsRef<Path> + Clone) {
 
     let mut line_read_buf = String::with_capacity((AVG_BYTES_PER_LINE * 2) as usize);
 
-    let mut stats = HashMap::new();
+    let mut stats = HashMap::default();
 
     // let mut workload_lines_per_thread = vec![0_u8; estimated_capacity_per_thread_buf];
     while let Ok(n) = reader.read_line(&mut line_read_buf) {
