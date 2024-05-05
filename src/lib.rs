@@ -27,7 +27,6 @@ impl Default for AggregatedWeatherData {
 }
 
 impl AggregatedWeatherData {
-    #[inline]
     fn add_datapoint(&mut self, measurement: f32) {
         if measurement < self.min {
             self.min = measurement
