@@ -1,4 +1,5 @@
 use fnv::FnvHashMap as HashMap;
+use likely_stable::likely;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -69,10 +70,16 @@ pub fn process_and_print(path: impl AsRef<Path> + Clone) {
         let (station, measurement) = line.split_once(';').unwrap();
         let measurement = f32::from_str(measurement).unwrap();
 
-        let weather_data = stats
-            .entry(station.to_string())
-            .or_insert(AggregatedWeatherData::default());
-        weather_data.add_datapoint(measurement);
+        // In the data set, there aren't that many different entries.
+        let data = stats.get_mut(station);
+        if likely(data.is_some()) {
+            let data: &mut AggregatedWeatherData = data.unwrap();
+            data.add_datapoint(measurement);
+        } else {
+            let mut data = AggregatedWeatherData::default();
+            data.add_datapoint(measurement);
+            stats.insert(station.to_string(), data);
+        }
 
         // Clear for next iteration.
         line_read_buf.clear();

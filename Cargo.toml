@@ -10,3 +10,4 @@ lto = true
 
 [dependencies]
 fnv = "1.0.7"
+likely_stable = "0.1.2"
