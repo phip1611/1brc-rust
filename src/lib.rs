@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
-const READ_BUFFER_SIZE: usize = 0x10000000 /* 256 Mib */;
+const READ_BUFFER_SIZE: usize = 0xc00000 /* 512 Mib */;
 
 #[derive(Debug, Default)]
 struct Stats(BTreeMap<String /* City */, Vec<f32> /* Measurements */>);
@@ -22,6 +22,14 @@ impl Stats {
             measurements.push(temp);
         } else {
             self.0.insert(city.to_string(), vec![temp]);
+        }
+    }
+    pub fn merge_measurements(&mut self, city: &str, new_measurements: &[f32]) {
+        if self.0.contains_key(city) {
+            let measurements = self.0.get_mut(city).unwrap();
+            measurements.extend(new_measurements);
+        } else {
+            self.0.insert(city.to_string(), new_measurements.to_vec());
         }
     }
 
@@ -49,16 +57,33 @@ enum ThreadMessage {
 pub fn process_and_print(path: impl AsRef<Path>) {
     let mut file = File::open(path).unwrap();
 
-    let (sender, receiver) = std::sync::mpsc::channel::<ThreadMessage>();
+    let mut thread_handles = Vec::with_capacity(64);
 
-    let calculation_thread = spawn_worker_thread(receiver);
-
-    let mut read_buf = vec![0; READ_BUFFER_SIZE];
+    // We will face situations where we don't entirely read the last line
+    // entirely in a read operation. So, these bytes are saved so they can be
+    // prepended to the new read data.
+    let mut remaining_bytes_from_previous_iter =
+        Vec::<u8>::with_capacity(32 /* refers to the line length  */);
 
     // Main threads read data in a loop.
     let begin = Instant::now();
+
     loop {
-        let n = file.read(&mut read_buf).unwrap();
+        // Allocations here are cheap compared to the intensive workloads
+        // in the other thread.
+        let mut read_buf = vec![0; READ_BUFFER_SIZE + remaining_bytes_from_previous_iter.len()];
+
+        // Prepend partial data that is left from previous iteration.
+        for (i, &byte) in remaining_bytes_from_previous_iter.iter().enumerate() {
+            read_buf[i] = byte;
+        }
+        // Read buf slice: don't override the just prepended bytes
+        let read_buf_slice = &mut read_buf[remaining_bytes_from_previous_iter.len()..];
+        remaining_bytes_from_previous_iter.clear();
+
+        // Note that .read() facilitates internal state which increases the
+        // internal file pointer.
+        let n = file.read(read_buf_slice).unwrap();
 
         if n == 0 {
             break;
@@ -67,23 +92,50 @@ pub fn process_and_print(path: impl AsRef<Path>) {
         // ensure vector shows true length
         read_buf.truncate(n);
 
+        let (real, remaining) = split_unfinished_line_from_slice(&read_buf);
+        remaining_bytes_from_previous_iter.clear();
+        remaining_bytes_from_previous_iter.extend(remaining);
+
+        // ensure vector shows true length
+        read_buf.truncate(real.len());
+
+        let (sender, receiver) = std::sync::mpsc::channel::<ThreadMessage>();
+        let handle = spawn_worker_thread(receiver);
+        thread_handles.push(handle);
         // These allocations won't happen too often. Relatively cheap.
-        let buf_copy = read_buf.clone();
-        sender.send(ThreadMessage::Workload(buf_copy)).unwrap()
+        sender.send(ThreadMessage::Workload(read_buf)).unwrap();
+        sender.send(ThreadMessage::Stop).unwrap();
     }
+    assert!(
+        remaining_bytes_from_previous_iter.is_empty(),
+        "measurements.txt must end with newline"
+    );
+
     eprintln!("time in IO thread: {:?}", begin.elapsed());
-    sender.send(ThreadMessage::Stop).unwrap();
-    let stats = calculation_thread.join().unwrap();
+
+    // Combine all stats from all threads.
+    let stats = thread_handles
+        .into_iter()
+        .map(|h| h.join().unwrap())
+        .reduce(|mut l, r| {
+            r.iter()
+                .for_each(|(city, measurements)| l.merge_measurements(&city, measurements));
+            l
+        })
+        .unwrap();
 
     print!("{{");
-    stats.into_inner().into_iter().for_each(|(city, mut measurements)| {
-        measurements.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-        let sum = measurements.iter().fold(0.0, |acc, next| acc + next);
-        let avg = sum / measurements.len() as f32;
-        let min = measurements[0];
-        let max = measurements[measurements.len() - 1];
-        print!("{city}={min:.1}/{avg:.1}/{max:.1}, ")
-    });
+    stats
+        .into_inner()
+        .into_iter()
+        .for_each(|(city, mut measurements)| {
+            measurements.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+            let sum = measurements.iter().fold(0.0, |acc, next| acc + next);
+            let avg = sum / measurements.len() as f32;
+            let min = measurements[0];
+            let max = measurements[measurements.len() - 1];
+            print!("{city}={min:.1}/{avg:.1}/{max:.1}, ")
+        });
     println!("}}");
 }
 
@@ -92,29 +144,13 @@ fn spawn_worker_thread(receiver: Receiver<ThreadMessage>) -> JoinHandle<Stats> {
         let begin = Instant::now();
         let mut stats = Stats::default();
 
-        let mut remaining_bytes_for_next_iter = Vec::new();
-
         while let ThreadMessage::Workload(vec) = receiver.recv().unwrap() {
-            // Workload for this iteration is now the remaining bytes from
-            // the previous iteration plus the new data.
-            remaining_bytes_for_next_iter.extend(vec);
-            let vec = remaining_bytes_for_next_iter;
-
-            let (real, remaining) = split_unfinished_line_from_slice(&vec);
-            let real = unsafe { core::str::from_utf8_unchecked(real) };
-
-            real.lines().for_each(|line| {
+            let data = unsafe { core::str::from_utf8_unchecked(&vec) };
+            data.lines().for_each(|line| {
                 let (city, measurement) = line.split_once(';').unwrap();
                 stats.add_record(city, measurement)
             });
-
-            // Save remaining bytes for next iteration.
-            remaining_bytes_for_next_iter = remaining.to_vec();
         }
-        assert!(
-            remaining_bytes_for_next_iter.is_empty(),
-            "measurements.txt must end with newline"
-        );
 
         eprintln!("time in calculation thread: {:?}", begin.elapsed());
 
