@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
 
-const READ_BUFFER_SIZE: usize = 0x10000000 /* 512 Mib */;
+const READ_BUFFER_SIZE: usize = 0x4000000 /* 64 Mib */;
 const AVG_BYTES_PER_LINE: u64 = 15;
 
 #[derive(Copy, Clone, Debug)]
@@ -52,13 +52,12 @@ impl AggregatedWeatherData {
 /// sizes and intermediate buffer sizes. This is a best-effort approach for a
 /// trade-off between readability, simplicity, and performance.
 pub fn process_and_print(path: impl AsRef<Path> + Clone) {
-
     let file = File::open(path).unwrap();
     let mut reader = BufReader::with_capacity(READ_BUFFER_SIZE, file);
 
     let mut line_read_buf = String::with_capacity((AVG_BYTES_PER_LINE * 2) as usize);
 
-    let mut stats = BTreeMap::new();
+    let mut stats = HashMap::new();
 
     // let mut workload_lines_per_thread = vec![0_u8; estimated_capacity_per_thread_buf];
     while let Ok(n) = reader.read_line(&mut line_read_buf) {
@@ -73,16 +72,23 @@ pub fn process_and_print(path: impl AsRef<Path> + Clone) {
 
         let weather_data = stats
             .entry(station.to_string())
-            .or_insert_with(|| AggregatedWeatherData::default());
+            .or_insert(AggregatedWeatherData::default());
         weather_data.add_datapoint(measurement);
 
+        // Clear for next iteration.
         line_read_buf.clear();
     }
+
+    // sort in a vec: quicker than in a btreemap
+    let mut stats = stats.into_iter().collect::<Vec<_>>();
+    stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
+        station_a.partial_cmp(station_b).unwrap()
+    });
 
     print_results(stats.into_iter());
 }
 
-fn print_results(stats: impl Iterator<Item = (String, AggregatedWeatherData)> + ExactSizeIterator) {
+fn print_results(stats: impl ExactSizeIterator<Item = (String, AggregatedWeatherData)>) {
     print!("{{");
     let n = stats.len();
     stats
