@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
-const READ_BUFFER_SIZE: usize = 0xc00000 /* 512 Mib */;
+const READ_BUFFER_SIZE: usize = 0x10000000 /* 512 Mib */;
 
 #[derive(Debug, Default)]
 struct Stats(BTreeMap<String /* City */, Vec<f32> /* Measurements */>);
