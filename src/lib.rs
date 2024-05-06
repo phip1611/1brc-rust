@@ -1,5 +1,4 @@
 use fnv::FnvHashMap as HashMap;
-use likely_stable::likely;
 use memmap::MmapOptions;
 use std::fs::File;
 use std::path::Path;
@@ -87,15 +86,14 @@ pub fn process(
         consumed_bytes_count += n2 + 1;
 
         // In the data set, there aren't that many different entries.
-        let data = stats.get_mut(station);
-        if likely(data.is_some()) {
-            let data: &mut AggregatedWeatherData = data.unwrap();
-            data.add_datapoint(measurement);
-        } else {
-            let mut data = AggregatedWeatherData::default();
-            data.add_datapoint(measurement);
-            stats.insert(station, data);
-        }
+        stats
+            .entry(station)
+            .and_modify(|data: &mut AggregatedWeatherData| data.add_datapoint(measurement))
+            .or_insert_with(|| {
+                let mut data = AggregatedWeatherData::default();
+                data.add_datapoint(measurement);
+                data
+            });
     }
 
     // sort in a vec: quicker than in a btreemap
