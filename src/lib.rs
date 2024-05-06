@@ -5,20 +5,18 @@ use fnv::FnvHashMap as HashMap;
 use memmap::MmapOptions;
 use std::fs::File;
 use std::path::Path;
+use std::slice;
 use std::str::FromStr;
 
 const CITIES_IN_DATASET: usize = 416;
 
 /// Processes all data according to the 1brc challenge by using a
 /// single-threaded implementation.
-pub fn process_single_threaded(
-    path: impl AsRef<Path> + Clone,
-) -> (memmap::Mmap, Vec<(&'static str, AggregatedData)>) {
+pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
     let file = File::open(path).unwrap();
     let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
-    // Hack: actually only valid as long as "mmap" lives
-    let file_bytes: &'static [u8] =
-        unsafe { core::slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
+    // Only valid as long as `mmap` lives.
+    let file_bytes: &[u8] = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
 
     let stats = process_file_chunk(file_bytes);
 
@@ -27,27 +25,10 @@ pub fn process_single_threaded(
     stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
         station_a.partial_cmp(station_b).unwrap()
     });
-    (mmap, stats)
-}
 
-pub fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedData)>) {
-    print!("{{");
-    let n = stats.len();
-    stats
-        .enumerate()
-        .map(|(index, x)| (index == n - 1, x))
-        .for_each(|(is_last, (city, measurements))| {
-            print!(
-                "{city}={:.1}/{:.1}/{:.1}",
-                measurements.min,
-                measurements.avg(),
-                measurements.max
-            );
-            if !is_last {
-                print!(", ");
-            }
-        });
-    println!("}}");
+    if print {
+        print_results(stats.into_iter())
+    }
 }
 
 /// Processes a chunk of the file. A chunk begins with the first byte of a line
@@ -73,25 +54,30 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
         // Remaining bytes for this loop iteration.
         let remaining_bytes = &bytes[consumed_bytes_count..];
 
+        // Look for station
         let n1 = memchr::memchr(b';', remaining_bytes).unwrap();
         let station = &remaining_bytes[0..n1];
         let station = unsafe { core::str::from_utf8_unchecked(station) };
 
+        // Look for measurement
         // +1: skip "\n"
         let search_begin_i = n1 + 1;
         let n2 = memchr::memchr(b'\n', &remaining_bytes[search_begin_i..])
             .map(|pos| pos + search_begin_i)
             .unwrap();
-
         // +1: skip ";'
         let measurement = &remaining_bytes[(n1 + 1)..n2];
         let measurement = unsafe { core::str::from_utf8_unchecked(measurement) };
+
+        // The costs of this function are negligible cheap.
         let measurement = f32::from_str(measurement).unwrap();
 
+        // Ensure the next iteration works on the next line.
         // +1: skip "\n"
         consumed_bytes_count += n2 + 1;
 
-        // In the data set, there aren't that many different entries.
+        // In the data set, there aren't that many different entries. So
+        // most of the time, we take the `and_modify` branch.
         stats
             .entry(station)
             .and_modify(|data: &mut AggregatedData| data.add_datapoint(measurement))
@@ -101,8 +87,28 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
                 data
             });
     }
-
     stats
+}
+
+/// Prints the results. The costs of this function are negligible cheap.
+fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedData)>) {
+    print!("{{");
+    let n = stats.len();
+    stats
+        .enumerate()
+        .map(|(index, x)| (index == n - 1, x))
+        .for_each(|(is_last, (city, measurements))| {
+            print!(
+                "{city}={:.1}/{:.1}/{:.1}",
+                measurements.min,
+                measurements.avg(),
+                measurements.max
+            );
+            if !is_last {
+                print!(", ");
+            }
+        });
+    println!("}}");
 }
 
 #[cfg(test)]
