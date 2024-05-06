@@ -1,8 +1,9 @@
 mod aggregated_data;
 
 use aggregated_data::AggregatedData;
+use criterion::black_box;
 use fnv::FnvHashMap as HashMap;
-use memmap::MmapOptions;
+use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use std::path::Path;
 use std::slice;
@@ -13,14 +14,10 @@ const CITIES_IN_DATASET: usize = 416;
 /// Processes all data according to the 1brc challenge by using a
 /// single-threaded implementation.
 pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
-    let file = File::open(path).unwrap();
-    let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
-    // Only valid as long as `mmap` lives.
-    let file_bytes: &[u8] = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
+    let (_, bytes) = unsafe { open_file(path) };
 
-    let stats = process_file_chunk(file_bytes);
+    let stats = process_file_chunk(bytes);
 
-    // sort in a vec: quicker than in a btreemap
     let mut stats = stats.into_iter().collect::<Vec<_>>();
     stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
         station_a.partial_cmp(station_b).unwrap()
@@ -28,6 +25,44 @@ pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 
     if print {
         print_results(stats.into_iter())
+    }
+}
+
+/// Processes all data according to the 1brc challenge by using a
+/// single-threaded implementation.
+pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
+    let (_, bytes) = unsafe { open_file(path) };
+
+
+}
+
+/// Opens the file by mapping it via mmap into the address space of the program.
+///
+/// # Safety
+/// The returned buffer is only valid as long as the returned `Mmap` lives.
+unsafe fn open_file<'a>(path: impl AsRef<Path>) -> (Mmap, &'a [u8]) {
+    let file = File::open(path).unwrap();
+    let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
+    // Only valid as long as `mmap` lives.
+    let file_bytes: &[u8] = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
+
+    (mmap, file_bytes)
+}
+
+/// Aggregates the results and, optionally, prints them.
+fn finalize<'a>(stats: impl Iterator<Item = (&'a str, AggregatedData)>, print: bool) {
+    // Sort everything into a vector. The costs of this are negligible cheap.
+    let mut stats = stats.collect::<Vec<_>>();
+    stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
+        station_a.partial_cmp(station_b).unwrap()
+    });
+
+    if print {
+        print_results(stats.into_iter())
+    } else {
+        // black-box: prevent the compiler from optimizing this away, when we
+        // don't print the results.
+        let _x = black_box(stats);
     }
 }
 

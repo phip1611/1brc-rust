@@ -22,7 +22,7 @@ To process 1 billion rows, a file of roughly 14 GB in size, my code ran:
 
 **Single Threaded**: ~24 seconds
 
-**Multi Threaded**: ~2.4 seconds (16 threads)
+**Multi Threaded**: ~2.4 seconds (16+1 threads)
 
 ### My Machine
 
