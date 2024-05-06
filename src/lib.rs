@@ -1,3 +1,9 @@
+//! Implements a highly optimized variant for the 1BRC.
+//! Look at [`process_file_chunk`], which is the heart of the implementation.
+//!
+//! All convenience around it, such as allocating a few helpers, is negligible
+//! from my testing.
+
 mod aggregated_data;
 mod chunk_iter;
 
@@ -70,39 +76,6 @@ unsafe fn open_file<'a>(path: impl AsRef<Path>) -> (Mmap, &'a [u8]) {
     (mmap, file_bytes)
 }
 
-/// Aggregates the results and, optionally, prints them.
-fn finalize<'a>(
-    stats: impl ExactSizeIterator<Item = HashMap<&'a str, AggregatedData>>,
-    print: bool,
-) {
-    // This reduce step is surprisingly negligible cheap.
-    let stats = stats
-        .reduce(|mut acc, next| {
-            next.into_iter().for_each(|(station, new_data)| {
-                acc.entry(station)
-                    .and_modify(|data| {
-                        data.merge(&new_data);
-                    })
-                    .or_insert(new_data);
-            });
-            acc
-        })
-        .unwrap();
-
-    // Sort everything into a vector. The costs of this are negligible cheap.
-    let mut stats = stats.into_iter().collect::<Vec<_>>();
-    stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
-        station_a.partial_cmp(station_b).unwrap()
-    });
-
-    if print {
-        print_results(stats.into_iter())
-    } else {
-        // black-box: prevent the compiler from optimizing any calculations away
-        let _x = black_box(stats);
-    }
-}
-
 /// Processes a chunk of the file. A chunk begins with the first byte of a line
 /// and ends with a newline (`\n`).
 ///
@@ -160,6 +133,39 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
             });
     }
     stats
+}
+
+/// Aggregates the results and, optionally, prints them.
+fn finalize<'a>(
+    stats: impl ExactSizeIterator<Item = HashMap<&'a str, AggregatedData>>,
+    print: bool,
+) {
+    // This reduce step is surprisingly negligible cheap.
+    let stats = stats
+        .reduce(|mut acc, next| {
+            next.into_iter().for_each(|(station, new_data)| {
+                acc.entry(station)
+                    .and_modify(|data| {
+                        data.merge(&new_data);
+                    })
+                    .or_insert(new_data);
+            });
+            acc
+        })
+        .unwrap();
+
+    // Sort everything into a vector. The costs of this are negligible cheap.
+    let mut stats = stats.into_iter().collect::<Vec<_>>();
+    stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
+        station_a.partial_cmp(station_b).unwrap()
+    });
+
+    if print {
+        print_results(stats.into_iter())
+    } else {
+        // black-box: prevent the compiler from optimizing any calculations away
+        let _x = black_box(stats);
+    }
 }
 
 /// Prints the results. The costs of this function are negligible cheap.
