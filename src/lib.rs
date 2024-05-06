@@ -44,15 +44,8 @@ impl AggregatedWeatherData {
     }
 }
 
-/// Processes all data according to the 1brc challenge and prints the data
-/// to `<path>.processed.txt` in `{Abha=-23.0/18.0/59.2, Abidjan=-16.2/...`
-/// format, where the value of each key is <min>/<mean>/<max>.
-///
-/// I didn't do specific "extreme" fine-tuning or testing of ideal buffer
-/// sizes and intermediate buffer sizes. This is a best-effort approach for a
-/// trade-off between readability, simplicity, and performance.
-///
-/// Returns a sorted vector with the aggregated results.
+/// Processes all data according to the 1brc challenge and returns them in a
+/// sorted vector.
 pub fn process(
     path: impl AsRef<Path> + Clone,
 ) -> (memmap::Mmap, Vec<(&'static str, AggregatedWeatherData)>) {
@@ -73,22 +66,19 @@ pub fn process(
     // 2.) read value
     let mut consumed_bytes_count = 0;
 
-    // Spawn worker threads with the correct data set for each.
+    // Spawn `n` worker threads with the correct data set for each.
     while consumed_bytes_count < file_bytes.len() {
         // Remaining bytes for this loop iteration.
         let remaining_bytes = &file_bytes[consumed_bytes_count..];
 
-        // The end of the block where the search for the actual end (newline)
+        // The inclusive end of the block where the search for the actual end (newline)
         // begins.
         let block_end_begin_search_index = min(bytes_per_thread, remaining_bytes.len());
 
         // Prepare a data block for the next thread; ensures it ends with a
         // newline
-        let data_for_thread_end_index = remaining_bytes.iter()
-            .skip(block_end_begin_search_index - 1)
-            .position(|&byte| byte == b'\n')
-            .map(|index| index + block_end_begin_search_index)
-            .unwrap();
+        let data_for_thread_end_index = memchr::memchr(b'\n', &remaining_bytes[block_end_begin_search_index - 1..])
+            .map(|pos| pos + block_end_begin_search_index).unwrap();
         let data_for_thread = &remaining_bytes[0..data_for_thread_end_index];
         consumed_bytes_count += data_for_thread_end_index + 1;
 
