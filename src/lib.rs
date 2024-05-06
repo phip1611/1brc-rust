@@ -64,6 +64,7 @@ pub fn process(
 
     let mut consumed_bytes_count = 0;
     while consumed_bytes_count < file_bytes.len() {
+        // Remaining bytes for this loop iteration.
         let remaining_bytes = &file_bytes[consumed_bytes_count..];
         // TODO use memchr?
         let n1 = remaining_bytes
@@ -75,7 +76,9 @@ pub fn process(
 
         let n2 = remaining_bytes
             .iter()
+            .skip(n1)
             .position(|&byte| byte == b'\n')
+            .map(|pos| pos + n1)
             .unwrap();
         // +1: skip ";'
         let measurement = &remaining_bytes[(n1 + 1)..n2];
