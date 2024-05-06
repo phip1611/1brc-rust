@@ -1,8 +1,7 @@
 use likely_stable::unlikely;
 use std::cmp::{max_by, min_by};
 
-// TODO remove copy?
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct AggregatedData {
     pub min: f32,
     pub max: f32,

@@ -195,21 +195,21 @@ mod tests {
 
         // Order here is not relevant. I stick to the order from the HashMap
         // implementation.
-        let hamburg = stats[0];
-        let berlin = stats[1];
-        let new_york = stats[2];
+        let hamburg = &stats[0];
+        let berlin = &stats[1];
+        let new_york = &stats[2];
 
         assert_eq!(hamburg.0, "Hamburg");
         assert_eq!(berlin.0, "Berlin");
         assert_eq!(new_york.0, "New York");
 
-        let hamburg = hamburg.1;
-        let berlin = berlin.1;
-        let new_york = new_york.1;
+        let hamburg = &hamburg.1;
+        let berlin = &berlin.1;
+        let new_york = &new_york.1;
 
-        assert_eq!(hamburg, AggregatedData::new(-12.7, -12.7, -12.7, 1));
-        assert_eq!(berlin, AggregatedData::new(-15.7, 10.0, -5.7, 2));
-        assert_eq!(new_york, AggregatedData::new(21.75, 21.75, 21.75, 1));
+        assert_eq!(hamburg, &AggregatedData::new(-12.7, -12.7, -12.7, 1));
+        assert_eq!(berlin, &AggregatedData::new(-15.7, 10.0, -5.7, 2));
+        assert_eq!(new_york, &AggregatedData::new(21.75, 21.75, 21.75, 1));
 
         assert_eq!(hamburg.avg(), -12.7);
         assert_eq!(berlin.avg(), -2.85);
