@@ -38,4 +38,6 @@ fn generate_testdata() {
         .expect("Failed to create measurements.txt!");
 
     fs::copy("./1brc/measurements.txt", "./measurements.txt").unwrap();
+    // Don't waste 14GB of disk space
+    fs::remove_file("./1brc/measurements.txt").unwrap();
 }
