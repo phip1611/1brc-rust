@@ -16,10 +16,17 @@ project, and run the script that generates the test data. This takes quite a
 few minutes, as one billion data rows are generated. If you want to accelerate
 that process, place your own `measurements.txt` in the root of the project.
 
-## Outcome
+## Results
 
-In the end, I could process 1 billion rows in ~24 seconds on my laptop with
-the following properties:
+To process 1 billion rows, a file of roughly 14 GB in size, my code ran:
+
+**Single Threaded**: ~24 seconds
+
+**Multi Threaded**: ~2.4 seconds (16 threads)
+
+### My Machine
+
+- Framework 13 Laptop
 - AMD Ryzen 7 7840U w/ Radeon  780M Graphics
 - Caches (sum of all):\
   L1d:                    256 KiB (8 instances)\
@@ -27,3 +34,4 @@ the following properties:
   L2:                     8 MiB (8 instances)\
   L3:                     16 MiB (1 instance)
 - 32GB of RAM
+- WD Black SN850X NVMe (6 GB/s read)
