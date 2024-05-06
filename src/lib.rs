@@ -8,6 +8,7 @@ use std::str::FromStr;
 const READ_BUFFER_SIZE: usize = 0x4000000 /* 64 Mib */;
 /// Obtained from `wc -L ./measurements.txt`
 const MAX_LINE_LEN: usize = 32 + 1 /* newline */;
+const CITIES_IN_DATASET: usize = 416;
 
 #[derive(Copy, Clone, Debug)]
 struct AggregatedWeatherData {
@@ -56,7 +57,7 @@ pub fn process_and_print(path: impl AsRef<Path> + Clone) {
     let file = File::open(path).unwrap();
     let mut reader = BufReader::with_capacity(READ_BUFFER_SIZE, file);
     let mut line_read_buf = Vec::with_capacity(MAX_LINE_LEN);
-    let mut stats = HashMap::default();
+    let mut stats = HashMap::with_capacity_and_hasher(CITIES_IN_DATASET, Default::default());
 
     while let Ok(n1) = reader.read_until(b';', &mut line_read_buf) {
         if unlikely(n1 == 0) {
