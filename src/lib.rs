@@ -1,10 +1,44 @@
+use std::alloc::System;
 use fnv::FnvHashMap as HashMap;
 use memmap::MmapOptions;
 use std::fs::File;
 use std::path::Path;
 use std::str::FromStr;
+use tracking_allocator::{AllocationGroupId, AllocationRegistry, AllocationTracker};
 
-const CITIES_IN_DATASET: usize = 416;
+#[global_allocator]
+static GLOBAL_ALLOCATOR: tracking_allocator::Allocator<System> = tracking_allocator::Allocator::system();
+
+struct StdoutTracker;
+
+// This is our tracker implementation.  You will always need to create an implementation of `AllocationTracker` in order
+// to actually handle allocation events.  The interface is straightforward: you're notified when an allocation occurs,
+// and when a deallocation occurs.
+impl AllocationTracker for StdoutTracker {
+    fn allocated(
+        &self,
+        _addr: usize,
+        _object_size: usize,
+        _wrapped_size: usize,
+        _group_id: AllocationGroupId,
+    ) {
+        panic!("There must be no allocations in the hot path!");
+    }
+
+    fn deallocated(
+        &self,
+        _addr: usize,
+        _object_size: usize,
+        _wrapped_size: usize,
+        _source_group_id: AllocationGroupId,
+        _current_group_id: AllocationGroupId,
+    ) {
+    }
+}
+
+/// Number of cities.
+/// https://github.com/gunnarmorling/1brc/blob/db064194be375edc02d6dbcd21268ad40f7e2869/src/main/java/dev/morling/onebrc/CreateMeasurements.java
+const CITIES_IN_DATASET: usize = 413;
 
 #[derive(Copy, Clone, Debug)]
 pub struct AggregatedWeatherData {
@@ -54,6 +88,9 @@ impl AggregatedWeatherData {
 pub fn process(
     path: impl AsRef<Path> + Clone,
 ) -> (memmap::Mmap, Vec<(&'static str, AggregatedWeatherData)>) {
+    let _ = AllocationRegistry::set_global_tracker(StdoutTracker)
+        .expect("no other global tracker should be set yet");
+
     let file = File::open(path).unwrap();
     let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
     // Hack: actually only valid as long as "mmap" lives
@@ -66,6 +103,7 @@ pub fn process(
     // 1.) read city name
     // 2.) read value
     let mut consumed_bytes_count = 0;
+    AllocationRegistry::enable_tracking();
     while consumed_bytes_count < file_bytes.len() {
         // Remaining bytes for this loop iteration.
         let remaining_bytes = &file_bytes[consumed_bytes_count..];
@@ -98,6 +136,7 @@ pub fn process(
                 data
             });
     }
+    AllocationRegistry::disable_tracking();
 
     // sort in a vec: quicker than in a btreemap
     let mut stats = stats.into_iter().collect::<Vec<_>>();
