@@ -48,9 +48,6 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
     let main_thread_chunk = iter.next().unwrap();
 
     for chunk in iter {
-        // Hack to move that data to the thread. This is safe as we join the
-        // threads before the reference becomes invalid.
-
         // Spawning the threads is negligible cheap.
         // TODO it surprises me that rustc won't force me to transmute `chunk`
         //  to a &static lifetime.
