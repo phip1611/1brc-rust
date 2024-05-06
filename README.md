@@ -46,8 +46,8 @@ what I measured.
 
 ## How to Run
 
-- `cargo run --release --bin single-threaded`, or
-- `cargo run --release --bin multi-threaded`
+- `cargo run --release --bin single-threaded [-- <path to measurements.txt>]`, or
+- `cargo run --release --bin multi-threaded [-- <path to measurements.txt>]`
 
 The build script will automatically init the Git submodule, build the Maven
 project, and run the script that generates the test data, if not present yet.
