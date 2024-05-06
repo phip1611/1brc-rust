@@ -1,12 +1,13 @@
 use fnv::FnvHashMap as HashMap;
-use likely_stable::likely;
+use likely_stable::{likely, unlikely};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
 
 const READ_BUFFER_SIZE: usize = 0x4000000 /* 64 Mib */;
-const AVG_BYTES_PER_LINE: u64 = 15;
+/// Obtained from `wc -L ./measurements.txt`
+const MAX_LINE_LEN: usize = 32 + 1 /* newline */;
 
 #[derive(Copy, Clone, Debug)]
 struct AggregatedWeatherData {
@@ -54,20 +55,27 @@ impl AggregatedWeatherData {
 pub fn process_and_print(path: impl AsRef<Path> + Clone) {
     let file = File::open(path).unwrap();
     let mut reader = BufReader::with_capacity(READ_BUFFER_SIZE, file);
-
-    let mut line_read_buf = String::with_capacity((AVG_BYTES_PER_LINE * 2) as usize);
-
+    let mut line_read_buf = Vec::with_capacity(MAX_LINE_LEN);
     let mut stats = HashMap::default();
 
-    // let mut workload_lines_per_thread = vec![0_u8; estimated_capacity_per_thread_buf];
-    while let Ok(n) = reader.read_line(&mut line_read_buf) {
-        if n == 0 {
+    while let Ok(n1) = reader.read_until(b';', &mut line_read_buf) {
+        if unlikely(n1 == 0) {
             break;
         }
-        // remove trailing "newline"
-        let line = &line_read_buf[..line_read_buf.len() - 1];
+        let n2 = reader.read_until(b'\n', &mut line_read_buf).unwrap();
+        debug_assert!(
+            n2 > 0,
+            "Malformed data. Data must always have a newline after a ;"
+        );
 
-        let (station, measurement) = line.split_once(';').unwrap();
+        let station = unsafe { core::str::from_utf8_unchecked(&line_read_buf[0..n1]) };
+        // remove trailing ';'
+        let station = &station[0..station.len() - 1];
+
+        let measurement = unsafe { core::str::from_utf8_unchecked(&line_read_buf[n1..]) };
+        // remove trailing '\n'
+        let measurement = &measurement[0..measurement.len() - 1];
+
         let measurement = f32::from_str(measurement).unwrap();
 
         // In the data set, there aren't that many different entries.
