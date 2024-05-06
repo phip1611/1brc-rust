@@ -7,9 +7,9 @@ this went through multiple iterations and I optimized it. A fun challenge!
 
 To process 1 billion rows, a file of roughly 14 GB in size, my code ran:
 
-**Single Threaded**: ~24 seconds
+**Single Threaded**: ~23.5 seconds
 
-**Multi Threaded**: ~3 seconds (16+1 threads)
+**Multi Threaded**: ~2.8 seconds (16+1 threads)
 
 ## About my Solution (⚠️ SPOILER ALERT)
 

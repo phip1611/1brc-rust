@@ -9,6 +9,7 @@ codegen-units = 1
 lto = true
 
 [dependencies]
+fast-float = "0.2.0"
 fnv = "1.0.7"
 likely_stable = "0.1.2"
 memchr = "2.7.2"

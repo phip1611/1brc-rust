@@ -14,7 +14,6 @@ use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use std::hint::black_box;
 use std::path::Path;
-use std::str::FromStr;
 use std::thread::available_parallelism;
 use std::{slice, thread};
 
@@ -127,7 +126,7 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
         let measurement = unsafe { core::str::from_utf8_unchecked(measurement) };
 
         // The costs of this function are negligible cheap.
-        let measurement = f32::from_str(measurement).unwrap();
+        let measurement = fast_float::parse(measurement.as_bytes()).unwrap();
 
         // Ensure the next iteration works on the next line.
         // +1: skip "\n"
