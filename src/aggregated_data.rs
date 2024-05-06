@@ -1,6 +1,6 @@
 use likely_stable::unlikely;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AggregatedData {
     pub min: f32,
     pub max: f32,
@@ -20,6 +20,16 @@ impl Default for AggregatedData {
 }
 
 impl AggregatedData {
+    #[cfg(test)]
+    pub fn new(min: f32, max: f32, sum: f32, sample_count: usize) -> Self {
+        Self {
+            min,
+            max,
+            sum,
+            sample_count,
+        }
+    }
+
     #[allow(clippy::collapsible_else_if)]
     pub fn add_datapoint(&mut self, measurement: f32) {
         if unlikely(self.empty()) {

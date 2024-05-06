@@ -9,16 +9,9 @@ use std::str::FromStr;
 
 const CITIES_IN_DATASET: usize = 416;
 
-/// Processes all data according to the 1brc challenge and prints the data
-/// to `<path>.processed.txt` in `{Abha=-23.0/18.0/59.2, Abidjan=-16.2/...`
-/// format, where the value of each key is <min>/<mean>/<max>.
-///
-/// I didn't do specific "extreme" fine-tuning or testing of ideal buffer
-/// sizes and intermediate buffer sizes. This is a best-effort approach for a
-/// trade-off between readability, simplicity, and performance.
-///
-/// Returns a sorted vector with the aggregated results.
-pub fn process(
+/// Processes all data according to the 1brc challenge by using a
+/// single-threaded implementation.
+pub fn process_single_threaded(
     path: impl AsRef<Path> + Clone,
 ) -> (memmap::Mmap, Vec<(&'static str, AggregatedData)>) {
     let file = File::open(path).unwrap();
@@ -27,15 +20,58 @@ pub fn process(
     let file_bytes: &'static [u8] =
         unsafe { core::slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
 
+    let stats = process_file_chunk(file_bytes);
+
+    // sort in a vec: quicker than in a btreemap
+    let mut stats = stats.into_iter().collect::<Vec<_>>();
+    stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
+        station_a.partial_cmp(station_b).unwrap()
+    });
+    (mmap, stats)
+}
+
+pub fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedData)>) {
+    print!("{{");
+    let n = stats.len();
+    stats
+        .enumerate()
+        .map(|(index, x)| (index == n - 1, x))
+        .for_each(|(is_last, (city, measurements))| {
+            print!(
+                "{city}={:.1}/{:.1}/{:.1}",
+                measurements.min,
+                measurements.avg(),
+                measurements.max
+            );
+            if !is_last {
+                print!(", ");
+            }
+        });
+    println!("}}");
+}
+
+/// Processes a chunk of the file. A chunk begins with the first byte of a line
+/// and ends with a newline (`\n`).
+///
+/// The contained loop is the highly optimized hot path of the data processing.
+/// There are no allocations, no unnecessary buffers, no unnecessary copies, no
+/// unnecessary comparisons. I optimized the shit out of this :D
+///
+/// The returned data structure is not sorted.
+fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
+    assert!(!bytes.is_empty());
+    let &last_byte = bytes.last().unwrap();
+    assert_eq!(last_byte, b'\n');
+
     let mut stats = HashMap::with_capacity_and_hasher(CITIES_IN_DATASET, Default::default());
 
     // In each iteration, I read a line in two dedicated steps:
     // 1.) read city name
     // 2.) read value
     let mut consumed_bytes_count = 0;
-    while consumed_bytes_count < file_bytes.len() {
+    while consumed_bytes_count < bytes.len() {
         // Remaining bytes for this loop iteration.
-        let remaining_bytes = &file_bytes[consumed_bytes_count..];
+        let remaining_bytes = &bytes[consumed_bytes_count..];
 
         let n1 = memchr::memchr(b';', remaining_bytes).unwrap();
         let station = &remaining_bytes[0..n1];
@@ -66,30 +102,39 @@ pub fn process(
             });
     }
 
-    // sort in a vec: quicker than in a btreemap
-    let mut stats = stats.into_iter().collect::<Vec<_>>();
-    stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
-        station_a.partial_cmp(station_b).unwrap()
-    });
-    (mmap, stats)
+    stats
 }
 
-pub fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedData)>) {
-    print!("{{");
-    let n = stats.len();
-    stats
-        .enumerate()
-        .map(|(index, x)| (index == n - 1, x))
-        .for_each(|(is_last, (city, measurements))| {
-            print!(
-                "{city}={:.1}/{:.1}/{:.1}",
-                measurements.min,
-                measurements.avg(),
-                measurements.max
-            );
-            if !is_last {
-                print!(", ");
-            }
-        });
-    println!("}}");
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_process_file_chunk() {
+        let input = "Berlin;10.0\nHamburg;-12.7\nNew York;21.75\nBerlin;-15.7\n";
+        let actual = process_file_chunk(input.as_bytes());
+        let stats = actual.into_iter().collect::<Vec<_>>();
+
+        // Order here is not relevant. I stick to the order from the HashMap
+        // implementation.
+        let hamburg = stats[0];
+        let berlin = stats[1];
+        let new_york = stats[2];
+
+        assert_eq!(hamburg.0, "Hamburg");
+        assert_eq!(berlin.0, "Berlin");
+        assert_eq!(new_york.0, "New York");
+
+        let hamburg = hamburg.1;
+        let berlin = berlin.1;
+        let new_york = new_york.1;
+
+        assert_eq!(hamburg, AggregatedData::new(-12.7, -12.7, -12.7, 1));
+        assert_eq!(berlin, AggregatedData::new(-15.7, 10.0, -5.7, 2));
+        assert_eq!(new_york, AggregatedData::new(21.75, 21.75, 21.75, 1));
+
+        assert_eq!(hamburg.avg(), -12.7);
+        assert_eq!(berlin.avg(), -2.85);
+        assert_eq!(new_york.avg(), 21.75);
+    }
 }
