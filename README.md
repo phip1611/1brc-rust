@@ -11,6 +11,9 @@ To process 1 billion rows, a file of roughly 14 GB in size, my code ran:
 
 **Multi Threaded**: ~2.8 seconds (16+1 threads)
 
+_These timings include everything, from reading the file, processing it, and
+printing it to stdout._
+
 ## About my Solution (⚠️ SPOILER ALERT)
 
 At first, I especially put focus on a highly optimized single-threaded solution.
