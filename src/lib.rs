@@ -31,7 +31,9 @@ pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 }
 
 /// Processes all data according to the 1brc challenge by using a
-/// single-threaded implementation.
+/// multi-threaded implementation. This spawns `n-1` worker threads. The main
+/// thread also performs one workload and finally collects and combines all
+/// results.
 pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
     let (_mmap, bytes) = unsafe { open_file(path) };
 
@@ -43,7 +45,10 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 
     let mut thread_handles = Vec::with_capacity(cpus);
 
-    for chunk in ChunkIter::new(bytes, cpus) {
+    let mut iter = ChunkIter::new(bytes, cpus);
+    let main_thread_chunk = iter.next().unwrap();
+
+    for chunk in iter {
         // Hack to move that data to the thread. This is safe as we join the
         // threads before the reference becomes invalid.
 
@@ -54,14 +59,18 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
         thread_handles.push(handle);
     }
 
-    // Give the other threads ASAP time to run.
-    thread::yield_now();
+    let stats = process_file_chunk(main_thread_chunk);
 
-    assert_eq!(thread_handles.len(), cpus);
+    debug_assert_eq!(
+        thread_handles.len(),
+        cpus - 1,
+        "must have 1-n worker threads"
+    );
 
     let thread_results_iter = thread_handles
         .into_iter()
-        .map(|handle| handle.join().unwrap());
+        .map(|handle| handle.join().unwrap())
+        .chain(core::iter::once(stats));
 
     finalize(thread_results_iter, print);
 }
@@ -139,10 +148,7 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
 }
 
 /// Aggregates the results and, optionally, prints them.
-fn finalize<'a>(
-    stats: impl ExactSizeIterator<Item = HashMap<&'a str, AggregatedData>>,
-    print: bool,
-) {
+fn finalize<'a>(stats: impl Iterator<Item = HashMap<&'a str, AggregatedData>>, print: bool) {
     // This reduce step is surprisingly negligible cheap.
     let stats = stats
         .reduce(|mut acc, next| {
