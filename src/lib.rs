@@ -3,6 +3,7 @@ use memmap::MmapOptions;
 use std::fs::File;
 use std::path::Path;
 use std::str::FromStr;
+use likely_stable::unlikely;
 
 const CITIES_IN_DATASET: usize = 416;
 
@@ -27,18 +28,28 @@ impl Default for AggregatedWeatherData {
 
 impl AggregatedWeatherData {
     fn add_datapoint(&mut self, measurement: f32) {
-        if measurement < self.min {
-            self.min = measurement
+        if unlikely(self.empty()) {
+            self.min = measurement;
+            self.max = measurement;
+        } else {
+            if measurement < self.min {
+                self.min = measurement
+            } else if measurement > self.max {
+                self.max = measurement
+            }
         }
-        if measurement > self.max {
-            self.max = measurement
-        }
+
         self.sum += measurement;
         self.sample_count += 1;
     }
 
     fn avg(&self) -> f32 {
         self.sum / self.sample_count as f32
+    }
+
+    /// Hasn't received a data point so far.
+    fn empty(&self) -> bool {
+        self.max == f32::MIN
     }
 }
 
@@ -70,7 +81,7 @@ pub fn process(
         // Remaining bytes for this loop iteration.
         let remaining_bytes = &file_bytes[consumed_bytes_count..];
 
-        let n1 = memchr::memchr(b';', &remaining_bytes).unwrap();
+        let n1 = memchr::memchr(b';', remaining_bytes).unwrap();
         let station = &remaining_bytes[0..n1];
         let station = unsafe { core::str::from_utf8_unchecked(station) };
 
