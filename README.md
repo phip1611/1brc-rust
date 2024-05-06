@@ -4,6 +4,10 @@ This is my attempt for the [1 billion row challenge](https://github.com/gunnarmo
 I didn't spend too much time on it, but looked what I can achieve in an
 afternoon.
 
+I especially put focus on a highly optimized single-threaded solution. I learned
+a lot about performance optimizations and the costs of certain `std`
+abstractions and implementations.
+
 
 ## How to Run
 
