@@ -12,3 +12,10 @@ lto = true
 fnv = "1.0.7"
 likely_stable = "0.1.2"
 memmap = "0.7.0"
+
+[[bench]]
+name = "bench"
+harness = false
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }

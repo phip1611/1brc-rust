@@ -6,13 +6,12 @@ use std::io::{BufRead, Cursor};
 use std::path::Path;
 use std::str::FromStr;
 
-const READ_BUFFER_SIZE: usize = 0x4000000 /* 64 Mib */;
 /// Obtained from `wc -L ./measurements.txt`
 const MAX_LINE_LEN: usize = 32 + 1 /* newline */;
 const CITIES_IN_DATASET: usize = 416;
 
 #[derive(Copy, Clone, Debug)]
-struct AggregatedWeatherData {
+pub struct AggregatedWeatherData {
     min: f32,
     max: f32,
     sum: f32,
@@ -54,7 +53,9 @@ impl AggregatedWeatherData {
 /// I didn't do specific "extreme" fine-tuning or testing of ideal buffer
 /// sizes and intermediate buffer sizes. This is a best-effort approach for a
 /// trade-off between readability, simplicity, and performance.
-pub fn process_and_print(path: impl AsRef<Path> + Clone) {
+///
+/// Returns a sorted vector with the aggregated results.
+pub fn process(path: impl AsRef<Path> + Clone) -> Vec<(String, AggregatedWeatherData)> {
     let file = File::open(path).unwrap();
     let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
     let file_bytes = unsafe { core::slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
@@ -103,11 +104,10 @@ pub fn process_and_print(path: impl AsRef<Path> + Clone) {
     stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
         station_a.partial_cmp(station_b).unwrap()
     });
-
-    print_results(stats.into_iter());
+    stats
 }
 
-fn print_results(stats: impl ExactSizeIterator<Item = (String, AggregatedWeatherData)>) {
+pub fn print_results(stats: impl ExactSizeIterator<Item = (String, AggregatedWeatherData)>) {
     print!("{{");
     let n = stats.len();
     stats
