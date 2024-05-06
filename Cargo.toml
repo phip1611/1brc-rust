@@ -10,6 +10,7 @@ lto = true
 
 [dependencies]
 fnv = "1.0.7"
+memchr = "2.7.2"
 memmap = "0.7.0"
 
 [[bench]]

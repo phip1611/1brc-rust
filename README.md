@@ -18,7 +18,7 @@ that process, place your own `measurements.txt` in the root of the project.
 
 ## Outcome
 
-In the end, I could process 1 billion rows in ~28 seconds on my laptop with
+In the end, I could process 1 billion rows in ~25 seconds on my laptop with
 the following properties:
 - AMD Ryzen 7 7840U w/ Radeon  780M Graphics
 - Caches (sum of all):\

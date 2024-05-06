@@ -62,24 +62,24 @@ pub fn process(
 
     let mut stats = HashMap::with_capacity_and_hasher(CITIES_IN_DATASET, Default::default());
 
+    // In each iteration, I read a line in two dedicated steps:
+    // 1.) read city name
+    // 2.) read value
     let mut consumed_bytes_count = 0;
     while consumed_bytes_count < file_bytes.len() {
         // Remaining bytes for this loop iteration.
         let remaining_bytes = &file_bytes[consumed_bytes_count..];
-        // TODO use memchr?
-        let n1 = remaining_bytes
-            .iter()
-            .position(|&byte| byte == b';')
-            .unwrap();
+
+        let n1 = memchr::memchr(b';', &remaining_bytes).unwrap();
         let station = &remaining_bytes[0..n1];
         let station = unsafe { core::str::from_utf8_unchecked(station) };
 
-        let n2 = remaining_bytes
-            .iter()
-            .skip(n1)
-            .position(|&byte| byte == b'\n')
-            .map(|pos| pos + n1)
+        // +1: skip "\n"
+        let search_begin_i = n1 + 1;
+        let n2 = memchr::memchr(b'\n', &remaining_bytes[search_begin_i..])
+            .map(|pos| pos + search_begin_i)
             .unwrap();
+
         // +1: skip ";'
         let measurement = &remaining_bytes[(n1 + 1)..n2];
         let measurement = unsafe { core::str::from_utf8_unchecked(measurement) };

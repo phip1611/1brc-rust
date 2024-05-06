@@ -25,7 +25,7 @@ fn build_maven_project() {
         .args(["package", "-T", "2C"])
         .current_dir("./1brc")
         .output()
-        .expect("Failed to fetch  submodules!");
+        .expect("Failed to build Maven project!");
 }
 
 fn generate_testdata() {
