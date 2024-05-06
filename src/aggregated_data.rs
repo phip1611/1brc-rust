@@ -1,5 +1,7 @@
 use likely_stable::unlikely;
+use std::cmp::{max_by, min_by};
 
+// TODO remove copy?
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AggregatedData {
     pub min: f32,
@@ -45,6 +47,14 @@ impl AggregatedData {
 
         self.sum += measurement;
         self.sample_count += 1;
+    }
+
+    /// Merge the data with another instance.
+    pub fn merge(&mut self, other: &Self) {
+        self.max = max_by(self.max, other.max, |a, b| a.partial_cmp(b).unwrap());
+        self.min = min_by(self.min, other.min, |a, b| a.partial_cmp(b).unwrap());
+        self.sum += other.sum;
+        self.sample_count += other.sample_count;
     }
 
     pub fn avg(&self) -> f32 {

@@ -1,39 +1,60 @@
 mod aggregated_data;
+mod chunk_iter;
 
+use crate::chunk_iter::ChunkIter;
 use aggregated_data::AggregatedData;
-use criterion::black_box;
 use fnv::FnvHashMap as HashMap;
 use memmap::{Mmap, MmapOptions};
 use std::fs::File;
+use std::hint::black_box;
 use std::path::Path;
-use std::slice;
 use std::str::FromStr;
+use std::thread::available_parallelism;
+use std::{slice, thread};
 
 const CITIES_IN_DATASET: usize = 416;
 
 /// Processes all data according to the 1brc challenge by using a
 /// single-threaded implementation.
 pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
-    let (_, bytes) = unsafe { open_file(path) };
+    let (_mmap, bytes) = unsafe { open_file(path) };
 
     let stats = process_file_chunk(bytes);
 
-    let mut stats = stats.into_iter().collect::<Vec<_>>();
-    stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
-        station_a.partial_cmp(station_b).unwrap()
-    });
-
-    if print {
-        print_results(stats.into_iter())
-    }
+    finalize([stats].into_iter(), print);
 }
 
 /// Processes all data according to the 1brc challenge by using a
 /// single-threaded implementation.
 pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
-    let (_, bytes) = unsafe { open_file(path) };
+    let (_mmap, bytes) = unsafe { open_file(path) };
 
+    let cpus: usize = if bytes.len() < 10000 {
+        1
+    } else {
+        available_parallelism().unwrap().into()
+    };
 
+    let mut thread_handles = Vec::with_capacity(cpus);
+
+    for chunk in ChunkIter::new(bytes, cpus) {
+        // Hack to move that data to the thread. This is safe as we join the
+        // threads before the reference becomes invalid.
+
+        // Spawning the threads is negligible cheap.
+        // TODO it surprises me that rustc won't force me to transmute `chunk`
+        //  to a &static lifetime.
+        let handle = thread::spawn(move || process_file_chunk(chunk));
+        thread_handles.push(handle);
+    }
+
+    assert_eq!(thread_handles.len(), cpus);
+
+    let thread_results_iter = thread_handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap());
+
+    finalize(thread_results_iter, print);
 }
 
 /// Opens the file by mapping it via mmap into the address space of the program.
@@ -50,9 +71,26 @@ unsafe fn open_file<'a>(path: impl AsRef<Path>) -> (Mmap, &'a [u8]) {
 }
 
 /// Aggregates the results and, optionally, prints them.
-fn finalize<'a>(stats: impl Iterator<Item = (&'a str, AggregatedData)>, print: bool) {
+fn finalize<'a>(
+    stats: impl ExactSizeIterator<Item = HashMap<&'a str, AggregatedData>>,
+    print: bool,
+) {
+    // This reduce step is surprisingly negligible cheap.
+    let stats = stats
+        .reduce(|mut acc, next| {
+            next.into_iter().for_each(|(station, new_data)| {
+                acc.entry(station)
+                    .and_modify(|data| {
+                        data.merge(&new_data);
+                    })
+                    .or_insert(new_data);
+            });
+            acc
+        })
+        .unwrap();
+
     // Sort everything into a vector. The costs of this are negligible cheap.
-    let mut stats = stats.collect::<Vec<_>>();
+    let mut stats = stats.into_iter().collect::<Vec<_>>();
     stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
         station_a.partial_cmp(station_b).unwrap()
     });
@@ -60,8 +98,7 @@ fn finalize<'a>(stats: impl Iterator<Item = (&'a str, AggregatedData)>, print: b
     if print {
         print_results(stats.into_iter())
     } else {
-        // black-box: prevent the compiler from optimizing this away, when we
-        // don't print the results.
+        // black-box: prevent the compiler from optimizing any calculations away
         let _x = black_box(stats);
     }
 }
