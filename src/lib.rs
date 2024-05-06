@@ -1,7 +1,8 @@
 use fnv::FnvHashMap as HashMap;
 use likely_stable::{likely, unlikely};
+use memmap::MmapOptions;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, Cursor};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -55,7 +56,10 @@ impl AggregatedWeatherData {
 /// trade-off between readability, simplicity, and performance.
 pub fn process_and_print(path: impl AsRef<Path> + Clone) {
     let file = File::open(path).unwrap();
-    let mut reader = BufReader::with_capacity(READ_BUFFER_SIZE, file);
+    let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
+    let file_bytes = unsafe { core::slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
+    let mut reader = Cursor::new(file_bytes);
+
     let mut line_read_buf = Vec::with_capacity(MAX_LINE_LEN);
     let mut stats = HashMap::with_capacity_and_hasher(CITIES_IN_DATASET, Default::default());
 
