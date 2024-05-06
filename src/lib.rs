@@ -54,6 +54,9 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
         thread_handles.push(handle);
     }
 
+    // Give the other threads ASAP time to run.
+    thread::yield_now();
+
     assert_eq!(thread_handles.len(), cpus);
 
     let thread_results_iter = thread_handles

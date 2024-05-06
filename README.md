@@ -58,7 +58,7 @@ place your own `measurements.txt` in the root of the project.
 ## My Machine
 
 - Framework 13 Laptop
-- AMD Ryzen 7 7840U w/ Radeon  780M Graphics
+- AMD Ryzen 7 7840U w/ Radeon  780M Graphics (16 cpus)
 - Caches (sum of all):\
   L1d:                    256 KiB (8 instances)\
   L1i:                    256 KiB (8 instances)\
