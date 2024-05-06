@@ -1,57 +1,13 @@
+mod aggregated_data;
+
+use aggregated_data::AggregatedData;
 use fnv::FnvHashMap as HashMap;
 use memmap::MmapOptions;
 use std::fs::File;
 use std::path::Path;
 use std::str::FromStr;
-use likely_stable::unlikely;
 
 const CITIES_IN_DATASET: usize = 416;
-
-#[derive(Copy, Clone, Debug)]
-pub struct AggregatedWeatherData {
-    min: f32,
-    max: f32,
-    sum: f32,
-    sample_count: usize,
-}
-
-impl Default for AggregatedWeatherData {
-    fn default() -> Self {
-        Self {
-            min: f32::MAX,
-            max: f32::MIN,
-            sum: 0.0,
-            sample_count: 0,
-        }
-    }
-}
-
-impl AggregatedWeatherData {
-    fn add_datapoint(&mut self, measurement: f32) {
-        if unlikely(self.empty()) {
-            self.min = measurement;
-            self.max = measurement;
-        } else {
-            if measurement < self.min {
-                self.min = measurement
-            } else if measurement > self.max {
-                self.max = measurement
-            }
-        }
-
-        self.sum += measurement;
-        self.sample_count += 1;
-    }
-
-    fn avg(&self) -> f32 {
-        self.sum / self.sample_count as f32
-    }
-
-    /// Hasn't received a data point so far.
-    fn empty(&self) -> bool {
-        self.max == f32::MIN
-    }
-}
 
 /// Processes all data according to the 1brc challenge and prints the data
 /// to `<path>.processed.txt` in `{Abha=-23.0/18.0/59.2, Abidjan=-16.2/...`
@@ -64,7 +20,7 @@ impl AggregatedWeatherData {
 /// Returns a sorted vector with the aggregated results.
 pub fn process(
     path: impl AsRef<Path> + Clone,
-) -> (memmap::Mmap, Vec<(&'static str, AggregatedWeatherData)>) {
+) -> (memmap::Mmap, Vec<(&'static str, AggregatedData)>) {
     let file = File::open(path).unwrap();
     let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
     // Hack: actually only valid as long as "mmap" lives
@@ -102,9 +58,9 @@ pub fn process(
         // In the data set, there aren't that many different entries.
         stats
             .entry(station)
-            .and_modify(|data: &mut AggregatedWeatherData| data.add_datapoint(measurement))
+            .and_modify(|data: &mut AggregatedData| data.add_datapoint(measurement))
             .or_insert_with(|| {
-                let mut data = AggregatedWeatherData::default();
+                let mut data = AggregatedData::default();
                 data.add_datapoint(measurement);
                 data
             });
@@ -118,7 +74,7 @@ pub fn process(
     (mmap, stats)
 }
 
-pub fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedWeatherData)>) {
+pub fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedData)>) {
     print!("{{");
     let n = stats.len();
     stats
