@@ -11,14 +11,14 @@ To process 1 billion rows, a file of roughly 14 GB in size, my code ran:
 
 **Multi Threaded**: ~3 seconds (16+1 threads)
 
-## About my Solution
+## About my Solution (⚠️ SPOILER ALERT)
 
 At first, I especially put focus on a highly optimized single-threaded solution.
 I learned a lot about performance optimizations and the costs of certain `std`
 abstractions and implementations. I got some inspiration by other solutions
 out there and had interesting discussions as well as findings.
 
-My takeaways for a performant solution (**SPOILER ALERT**):
+My takeaways for a performant solution (⚠️ **SPOILER ALERT**):
 
 - `mmap` whole file into address space
   - no more user-space buffering necessary
