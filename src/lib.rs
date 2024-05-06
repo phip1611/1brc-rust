@@ -52,10 +52,14 @@ impl AggregatedWeatherData {
 /// trade-off between readability, simplicity, and performance.
 ///
 /// Returns a sorted vector with the aggregated results.
-pub fn process(path: impl AsRef<Path> + Clone) -> Vec<(String, AggregatedWeatherData)> {
+pub fn process(
+    path: impl AsRef<Path> + Clone,
+) -> (memmap::Mmap, Vec<(&'static str, AggregatedWeatherData)>) {
     let file = File::open(path).unwrap();
     let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
-    let file_bytes = unsafe { core::slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
+    // Hack: actually only valid as long as "mmap" lives
+    let file_bytes: &'static [u8] =
+        unsafe { core::slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
 
     let mut stats = HashMap::with_capacity_and_hasher(CITIES_IN_DATASET, Default::default());
 
@@ -90,7 +94,7 @@ pub fn process(path: impl AsRef<Path> + Clone) -> Vec<(String, AggregatedWeather
         } else {
             let mut data = AggregatedWeatherData::default();
             data.add_datapoint(measurement);
-            stats.insert(station.to_string(), data);
+            stats.insert(station, data);
         }
     }
 
@@ -99,10 +103,10 @@ pub fn process(path: impl AsRef<Path> + Clone) -> Vec<(String, AggregatedWeather
     stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
         station_a.partial_cmp(station_b).unwrap()
     });
-    stats
+    (mmap, stats)
 }
 
-pub fn print_results(stats: impl ExactSizeIterator<Item = (String, AggregatedWeatherData)>) {
+pub fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedWeatherData)>) {
     print!("{{");
     let n = stats.len();
     stats
