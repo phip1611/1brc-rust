@@ -7,9 +7,9 @@ fn criterion_benchmark(c: &mut Criterion) {
             let _x = black_box(stats);
         })
     });
-    c.bench_function("1brc (10000 entries )", |b| {
+    c.bench_function("1brc (1000000 entries )", |b| {
         b.iter(|| {
-            let stats = phips_1brc::process("./measurements_10000.txt");
+            let stats = phips_1brc::process("./measurements_1000000.txt");
             let _x = black_box(stats);
         })
     });
