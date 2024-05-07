@@ -9,10 +9,11 @@ To process 1 billion rows, a file of roughly 14 GB in size, my code ran:
 
 **Single Threaded**: ~23.5 seconds
 
-**Multi Threaded**: ~2.8 seconds (16 threads)
+**Multi Threaded** : ~2.8 seconds (16 threads)
 
 _These timings include everything, from reading the file, processing it, and
-printing it to stdout._
+printing it to stdout. However, as I'm using mmap and have lots of RAM, Linux
+has the whole file in the in-kernel FS cache._
 
 ## About my Solution (⚠️ SPOILER ALERT)
 
