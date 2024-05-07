@@ -17,6 +17,8 @@ use std::hint::black_box;
 use std::path::Path;
 use std::thread::available_parallelism;
 use std::{slice, thread};
+use std::io::Read;
+use std::time::Instant;
 
 /// Some characteristics specifically to the [1BRC data set](https://github.com/gunnarmorling/1brc/blob/db064194be375edc02d6dbcd21268ad40f7e2869/src/main/java/dev/morling/onebrc/CreateMeasurements.java).
 mod data_set_properties {
@@ -31,9 +33,9 @@ mod data_set_properties {
 /// Processes all data according to the 1brc challenge by using a
 /// single-threaded implementation.
 pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
-    let (_mmap, bytes) = unsafe { open_file(path) };
+    let bytes = unsafe { open_file(path) };
 
-    let stats = process_file_chunk(bytes);
+    let stats = process_file_chunk(&bytes);
 
     finalize([stats].into_iter(), print);
 }
@@ -43,7 +45,10 @@ pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 /// thread also performs one workload and finally collects and combines all
 /// results.
 pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
-    let (_mmap, bytes) = unsafe { open_file(path) };
+    let begin = Instant::now();
+    let bytes = unsafe { open_file(path) };
+    println!("reading the whole file to memory took {:?}", begin.elapsed());
+    let begin = Instant::now();
 
     let cpus: usize = if bytes.len() < 10000 {
         1
@@ -53,13 +58,13 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 
     let mut thread_handles = Vec::with_capacity(cpus);
 
-    let mut iter = ChunkIter::new(bytes, cpus);
+    let mut iter = ChunkIter::new(&bytes, cpus);
     let main_thread_chunk = iter.next().unwrap();
 
     for chunk in iter {
+        let chunk = unsafe { core::mem::transmute::<_, &'static [u8]>(chunk) };
+
         // Spawning the threads is negligible cheap.
-        // TODO it surprises me that rustc won't force me to transmute `chunk`
-        //  to a &static lifetime.
         let handle = thread::spawn(move || process_file_chunk(chunk));
         thread_handles.push(handle);
     }
@@ -78,19 +83,19 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
         .chain(core::iter::once(stats));
 
     finalize(thread_results_iter, print);
+
+    println!("processing the data in RAM took {:?}", begin.elapsed());
 }
 
 /// Opens the file by mapping it via mmap into the address space of the program.
 ///
 /// # Safety
 /// The returned buffer is only valid as long as the returned `Mmap` lives.
-unsafe fn open_file<'a>(path: impl AsRef<Path>) -> (Mmap, &'a [u8]) {
-    let file = File::open(path).unwrap();
-    let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
-    // Only valid as long as `mmap` lives.
-    let file_bytes: &[u8] = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
-
-    (mmap, file_bytes)
+unsafe fn open_file<'a>(path: impl AsRef<Path>) -> Vec<u8> {
+    let mut file = File::open(path).unwrap();
+    let mut vec = Vec::new();
+    file.read_to_end(&mut vec).unwrap();
+    vec
 }
 
 /// Processes a chunk of the file. A chunk begins with the first byte of a line
