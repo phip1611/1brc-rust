@@ -8,6 +8,7 @@ mod aggregated_data;
 mod chunk_iter;
 
 use crate::chunk_iter::ChunkIter;
+use crate::data_set_properties::{MIN_MEASUREMENT_LEN, MIN_STATION_LEN, STATIONS_IN_DATASET};
 use aggregated_data::AggregatedData;
 use fnv::FnvHashMap as HashMap;
 use memmap::{Mmap, MmapOptions};
@@ -17,7 +18,15 @@ use std::path::Path;
 use std::thread::available_parallelism;
 use std::{slice, thread};
 
-const CITIES_IN_DATASET: usize = 416;
+/// Some characteristics specifically to the [1BRC data set](https://github.com/gunnarmorling/1brc/blob/db064194be375edc02d6dbcd21268ad40f7e2869/src/main/java/dev/morling/onebrc/CreateMeasurements.java).
+mod data_set_properties {
+    /// The amount of distinct weather stations (cities).
+    pub const STATIONS_IN_DATASET: usize = 413;
+    /// The minimum station name length (for example: `Jos`).
+    pub const MIN_STATION_LEN: usize = 3;
+    /// The minimum measurement (str) len (for example: `6.6`).
+    pub const MIN_MEASUREMENT_LEN: usize = 3;
+}
 
 /// Processes all data according to the 1brc challenge by using a
 /// single-threaded implementation.
@@ -97,7 +106,7 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
     let &last_byte = bytes.last().unwrap();
     assert_eq!(last_byte, b'\n');
 
-    let mut stats = HashMap::with_capacity_and_hasher(CITIES_IN_DATASET, Default::default());
+    let mut stats = HashMap::with_capacity_and_hasher(STATIONS_IN_DATASET, Default::default());
 
     // In each iteration, I read a line in two dedicated steps:
     // 1.) read city name
@@ -107,14 +116,17 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
         // Remaining bytes for this loop iteration.
         let remaining_bytes = &bytes[consumed_bytes_count..];
 
-        // Look for station
-        let n1 = memchr::memchr(b';', remaining_bytes).unwrap();
-        let station = &remaining_bytes[0..n1];
+        // Look for (weather) station / city
+        let search_begin_i = MIN_STATION_LEN;
+        let n1 = memchr::memchr(b';', &remaining_bytes[search_begin_i..])
+            .map(|pos| pos + search_begin_i)
+            .unwrap();
+        let station = &remaining_bytes[..n1];
         let station = unsafe { core::str::from_utf8_unchecked(station) };
 
         // Look for measurement
         // +1: skip "\n"
-        let search_begin_i = n1 + 1;
+        let search_begin_i = n1 + 1 + MIN_MEASUREMENT_LEN;
         let n2 = memchr::memchr(b'\n', &remaining_bytes[search_begin_i..])
             .map(|pos| pos + search_begin_i)
             .unwrap();
@@ -122,7 +134,10 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
         let measurement = &remaining_bytes[(n1 + 1)..n2];
         let measurement = unsafe { core::str::from_utf8_unchecked(measurement) };
 
-        // The costs of this function are negligible cheap.
+        // TODO: This could be replaced by an optimized parser specifically
+        // trimmed to the characteristics of the data set. However, this float
+        // parsing is already more efficient than the one from the standard
+        // library.
         let measurement = fast_float::parse(measurement.as_bytes()).unwrap();
 
         // Ensure the next iteration works on the next line.
