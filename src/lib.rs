@@ -17,7 +17,6 @@ use std::hint::black_box;
 use std::path::Path;
 use std::thread::available_parallelism;
 use std::{slice, thread};
-use std::time::{Duration, Instant};
 
 /// Some characteristics specifically to the [1BRC data set](https://github.com/gunnarmorling/1brc/blob/db064194be375edc02d6dbcd21268ad40f7e2869/src/main/java/dev/morling/onebrc/CreateMeasurements.java).
 mod data_set_properties {
@@ -109,19 +108,11 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
 
     let mut stats = HashMap::with_capacity_and_hasher(STATIONS_IN_DATASET, Default::default());
 
-    let mut lookup_times = Duration::default();
-    let mut float_parse_times = Duration::default();
-    let mut insert_times = Duration::default();
-    let mut i = 0;
-
     // In each iteration, I read a line in two dedicated steps:
     // 1.) read city name
     // 2.) read value
     let mut consumed_bytes_count = 0;
     while consumed_bytes_count < bytes.len() {
-        i += 1;
-        let begin = Instant::now();
-
         // Remaining bytes for this loop iteration.
         let remaining_bytes = &bytes[consumed_bytes_count..];
 
@@ -142,21 +133,17 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
         // +1: skip ";'
         let measurement = &remaining_bytes[(n1 + 1)..n2];
         let measurement = unsafe { core::str::from_utf8_unchecked(measurement) };
-        lookup_times += begin.elapsed();
 
         // TODO: This could be replaced by an optimized parser specifically
         // trimmed to the characteristics of the data set. However, this float
         // parsing is already more efficient than the one from the standard
         // library.
-        let begin = Instant::now();
         let measurement = fast_float::parse(measurement.as_bytes()).unwrap();
-        float_parse_times += begin.elapsed();
 
         // Ensure the next iteration works on the next line.
         // +1: skip "\n"
         consumed_bytes_count += n2 + 1;
 
-        let begin = Instant::now();
         // In the data set, there aren't that many different entries. So
         // most of the time, we take the `and_modify` branch.
         stats
@@ -167,12 +154,7 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
                 data.add_datapoint(measurement);
                 data
             });
-        insert_times += begin.elapsed();
     }
-
-    println!("lookup_times     : {:?}", lookup_times / i);
-    println!("float_parse_times: {:?}", float_parse_times / i);
-    println!("insert_times     : {:?}", insert_times / i);
     stats
 }
 
