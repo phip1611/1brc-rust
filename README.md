@@ -16,6 +16,8 @@ printing it to stdout._
 
 ## About my Solution (⚠️ SPOILER ALERT)
 
+My algorithmic choices are specifically trimmed to the official [data set generator](https://github.com/gunnarmorling/1brc/blob/db064194be375edc02d6dbcd21268ad40f7e2869/src/main/java/dev/morling/onebrc/CreateMeasurements.java).
+
 At first, I especially put focus on a highly optimized single-threaded solution.
 I learned a lot about performance optimizations and the costs of certain `std`
 abstractions and implementations. I got some inspiration by other solutions
