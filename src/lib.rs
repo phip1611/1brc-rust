@@ -45,11 +45,7 @@ pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
     let (_mmap, bytes) = unsafe { open_file(path) };
 
-    let cpus: usize = if bytes.len() < 10000 {
-        1
-    } else {
-        available_parallelism().unwrap().into()
-    };
+    let cpus = cpu_count(bytes.len());
 
     let mut thread_handles = Vec::with_capacity(cpus);
 
@@ -156,6 +152,14 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
             });
     }
     stats
+}
+
+fn cpu_count(size: usize) -> usize {
+    if size < 10000 {
+        1
+    } else {
+        available_parallelism().unwrap().into()
+    }
 }
 
 /// Aggregates the results and, optionally, prints them.
