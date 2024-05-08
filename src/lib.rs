@@ -17,6 +17,8 @@ use std::hint::black_box;
 use std::path::Path;
 use std::thread::available_parallelism;
 use std::{slice, thread};
+use std::io::Write;
+use std::os::unix::net::UnixStream;
 
 /// Some characteristics specifically to the [1BRC data set](https://github.com/gunnarmorling/1brc/blob/db064194be375edc02d6dbcd21268ad40f7e2869/src/main/java/dev/morling/onebrc/CreateMeasurements.java).
 mod data_set_properties {
@@ -74,6 +76,12 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
         .chain(core::iter::once(stats));
 
     finalize(thread_results_iter, print);
+    let mut s = UnixStream::connect("/tmp/1brc-notify-socket").unwrap();
+    s.write(&[1_u8]).unwrap();
+    // eprintln!("notified socket");
+    //let begin = Instant::now();
+    //drop(mmap);
+    //println!("unmap took {:?}", begin.elapsed());
 }
 
 /// Opens the file by mapping it via mmap into the address space of the program.
