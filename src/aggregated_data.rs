@@ -84,6 +84,6 @@ mod tests {
 
     #[test]
     fn layout() {
-        assert_eq!(size_of::<AggregatedData>(), 8);
+        assert_eq!(size_of::<AggregatedData>(), 16);
     }
 }

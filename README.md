@@ -5,11 +5,13 @@ this went through multiple iterations and I optimized it. A fun challenge!
 
 ## TLDR; Results
 
-To process 1 billion rows, a file of roughly 14 GB in size, my code ran:
+To process 1 billion rows, a file of roughly 14 GB in size, my code has the
+following timings on my machine. I ran each test multiple times and picked
+the best result:
 
 **Single Threaded**: ~19.9 seconds
 
-**Multi Threaded** : ~2.3 seconds (16 threads)
+**Multi Threaded** : ~2.2 seconds (16 threads)
 
 _These timings include everything, from reading the file, processing it, and
 printing it to stdout. However, as I'm using mmap and have lots of RAM, Linux

@@ -15,6 +15,7 @@ use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use std::hint::black_box;
 use std::path::Path;
+use std::str::from_utf8_unchecked;
 use std::thread::available_parallelism;
 use std::{slice, thread};
 
@@ -109,32 +110,31 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
     // 2.) read value
     let mut consumed_bytes_count = 0;
     while consumed_bytes_count < bytes.len() {
-        // Remaining bytes for this loop iteration.
+        // Remaining bytes for this loop iteration. Each iteration processes
+        // the bytes until the final newline.
+        //
+        // The following indices and ranges are relative within the bytes
+        // representing the current line.
         let remaining_bytes = &bytes[consumed_bytes_count..];
 
-        // Look for (weather) station / city
-        let search_begin_i = MIN_STATION_LEN;
-        let n1 = memchr::memchr(b';', &remaining_bytes[search_begin_i..])
-            .map(|pos| pos + search_begin_i)
+        // Look for ";", and skip irrelevant bytes beforehand.
+        let search_offset = MIN_STATION_LEN;
+        let delimiter = memchr::memchr(b';', &remaining_bytes[search_offset..])
+            .map(|pos| pos + search_offset)
             .unwrap();
-        let station = &remaining_bytes[..n1];
-        let station = unsafe { core::str::from_utf8_unchecked(station) };
+        // Look for "\n", and skip irrelevant bytes beforehand.
+        let search_offset = delimiter + 1 + MIN_MEASUREMENT_LEN;
+        let newline = memchr::memchr(b'\n', &remaining_bytes[search_offset..])
+            .map(|pos| pos + search_offset)
+            .unwrap();
 
-        // Look for measurement
-        // +1: skip "\n"
-        let search_begin_i = n1 + 1 + MIN_MEASUREMENT_LEN;
-        let n2 = memchr::memchr(b'\n', &remaining_bytes[search_begin_i..])
-            .map(|pos| pos + search_begin_i)
-            .unwrap();
-        // +1: skip ";'
-        let measurement = &remaining_bytes[(n1 + 1)..n2];
-        let measurement = unsafe { core::str::from_utf8_unchecked(measurement) };
+        let station = unsafe { from_utf8_unchecked(&remaining_bytes[0..delimiter]) };
+        let measurement = unsafe { from_utf8_unchecked(&remaining_bytes[delimiter + 1..newline]) };
 
         let measurement = fast_f32_parse_encoded(measurement);
 
         // Ensure the next iteration works on the next line.
-        // +1: skip "\n"
-        consumed_bytes_count += n2 + 1;
+        consumed_bytes_count += newline + 1;
 
         // In the data set, there aren't that many different entries. So
         // most of the time, we take the `and_modify` branch.
