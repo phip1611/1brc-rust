@@ -8,17 +8,18 @@ mod aggregated_data;
 mod chunk_iter;
 
 use crate::chunk_iter::ChunkIter;
-use crate::data_set_properties::{MIN_MEASUREMENT_LEN, MIN_STATION_LEN, STATIONS_IN_DATASET};
+use crate::data_set_properties::{MIN_STATION_LEN, STATIONS_IN_DATASET};
 use aggregated_data::AggregatedData;
 use fnv::FnvHashMap as HashMap;
 use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use std::hint::black_box;
-use std::path::Path;
-use std::thread::available_parallelism;
-use std::{slice, thread};
 use std::io::Write;
 use std::os::unix::net::UnixStream;
+use std::path::Path;
+use std::str::FromStr;
+use std::thread::available_parallelism;
+use std::{slice, thread};
 
 /// Some characteristics specifically to the [1BRC data set](https://github.com/gunnarmorling/1brc/blob/db064194be375edc02d6dbcd21268ad40f7e2869/src/main/java/dev/morling/onebrc/CreateMeasurements.java).
 mod data_set_properties {
@@ -26,8 +27,6 @@ mod data_set_properties {
     pub const STATIONS_IN_DATASET: usize = 413;
     /// The minimum station name length (for example: `Jos`).
     pub const MIN_STATION_LEN: usize = 3;
-    /// The minimum measurement (str) len (for example: `6.6`).
-    pub const MIN_MEASUREMENT_LEN: usize = 3;
 }
 
 /// Processes all data according to the 1brc challenge by using a
@@ -76,8 +75,10 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
         .chain(core::iter::once(stats));
 
     finalize(thread_results_iter, print);
-    let mut s = UnixStream::connect("/tmp/1brc-notify-socket").unwrap();
-    s.write(&[1_u8]).unwrap();
+    if print {
+        let mut s = UnixStream::connect("/tmp/1brc-notify-socket").unwrap();
+        s.write(&[1_u8]).unwrap();
+    }
     // eprintln!("notified socket");
     //let begin = Instant::now();
     //drop(mmap);
@@ -128,25 +129,34 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
         let station = &remaining_bytes[..n1];
         let station = unsafe { core::str::from_utf8_unchecked(station) };
 
-        // Look for measurement
-        // +1: skip "\n"
-        let search_begin_i = n1 + 1 + MIN_MEASUREMENT_LEN;
-        let n2 = memchr::memchr(b'\n', &remaining_bytes[search_begin_i..])
+        // Look for measurement by
+        // 1) looking for `;<whole part>.`
+        // 2) looking for `.<decimal part>\n`
+        // The measurement is then encoded as i16. No float overhead necessary.
+
+        // +1: skip ";"
+        let search_begin_i = n1 + 1;
+        let n2 = memchr::memchr(b'.', &remaining_bytes[search_begin_i..])
             .map(|pos| pos + search_begin_i)
             .unwrap();
-        // +1: skip ";'
-        let measurement = &remaining_bytes[(n1 + 1)..n2];
-        let measurement = unsafe { core::str::from_utf8_unchecked(measurement) };
 
-        // TODO: This could be replaced by an optimized parser specifically
-        // trimmed to the characteristics of the data set. However, this float
-        // parsing is already more efficient than the one from the standard
-        // library.
-        let measurement = fast_float::parse(measurement.as_bytes()).unwrap();
+        let measurement_even_part = &remaining_bytes[search_begin_i..n2];
+        let measurement_even_part =
+            unsafe { core::str::from_utf8_unchecked(measurement_even_part) };
+
+        // +1: skip "."
+        let search_begin_i = n2 + 1;
+        // +1: one decimal place
+        let search_end_i = search_begin_i + 1;
+        let measurement_decimal_part = &remaining_bytes[search_begin_i..search_end_i];
+        let measurement_decimal_part =
+            unsafe { core::str::from_utf8_unchecked(measurement_decimal_part) };
+
+        let measurement = float_str_to_10xint(measurement_even_part, measurement_decimal_part);
 
         // Ensure the next iteration works on the next line.
-        // +1: skip "\n"
-        consumed_bytes_count += n2 + 1;
+        // +3: skip ".", "<decimal place>", and "\n"
+        consumed_bytes_count += n2 + 3;
 
         // In the data set, there aren't that many different entries. So
         // most of the time, we take the `and_modify` branch.
@@ -210,9 +220,9 @@ fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedDa
         .for_each(|(is_last, (city, measurements))| {
             print!(
                 "{city}={:.1}/{:.1}/{:.1}",
-                measurements.min,
+                measurements.min(),
                 measurements.avg(),
-                measurements.max
+                measurements.max()
             );
             if !is_last {
                 print!(", ");
@@ -221,13 +231,31 @@ fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedDa
     println!("}}");
 }
 
+/// Transforms floating point numbers in string format to an integer
+/// representation. This benefits from the fact that we know that all input data
+/// has exactly 1 decimal place.
+///
+/// - `15.5` -> `155`
+/// - `-7.1` -> `-71`
+///
+/// The range of possible values is within `-99.9..=99.9`.
+///
+/// To get back to the actual floating point value, one has to convert the value
+/// to float and divide it by 10.
+fn float_str_to_10xint(even_part: &str, decimal_part: &str) -> i16 {
+    let i1 = i16::from_str(even_part).unwrap();
+    let i2 = i16::from_str(decimal_part).unwrap();
+
+    i1 * 10 + i2 * i1.signum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_process_file_chunk() {
-        let input = "Berlin;10.0\nHamburg;-12.7\nNew York;21.75\nBerlin;-15.7\n";
+        let input = "Berlin;10.0\nHamburg;-12.7\nNew York;21.5\nBerlin;-15.7\n";
         let actual = process_file_chunk(input.as_bytes());
         let stats = actual.into_iter().collect::<Vec<_>>();
 
@@ -245,12 +273,19 @@ mod tests {
         let berlin = &berlin.1;
         let new_york = &new_york.1;
 
-        assert_eq!(hamburg, &AggregatedData::new(-12.7, -12.7, -12.7, 1));
-        assert_eq!(berlin, &AggregatedData::new(-15.7, 10.0, -5.7, 2));
-        assert_eq!(new_york, &AggregatedData::new(21.75, 21.75, 21.75, 1));
+        assert_eq!(hamburg, &AggregatedData::new(-127, -127, -127, 1));
+        assert_eq!(berlin, &AggregatedData::new(-157, 100, -57, 2));
+        assert_eq!(new_york, &AggregatedData::new(215, 215, 215, 1));
 
         assert_eq!(hamburg.avg(), -12.7);
         assert_eq!(berlin.avg(), -2.85);
-        assert_eq!(new_york.avg(), 21.75);
+        assert_eq!(new_york.avg(), 21.5);
+    }
+
+    #[test]
+    fn test_float_str_to_int() {
+        assert_eq!(float_str_to_10xint("5", "0"), 50);
+        assert_eq!(float_str_to_10xint("5", "7"), 57);
+        assert_eq!(float_str_to_10xint("-5", "7"), -57);
     }
 }

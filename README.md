@@ -7,9 +7,9 @@ this went through multiple iterations and I optimized it. A fun challenge!
 
 To process 1 billion rows, a file of roughly 14 GB in size, my code ran:
 
-**Single Threaded**: ~23.5 seconds
+**Single Threaded**: ~19.9 seconds
 
-**Multi Threaded** : ~2.6 seconds (16 threads)
+**Multi Threaded** : ~2.4 seconds (16 threads)
 
 _These timings include everything, from reading the file, processing it, and
 printing it to stdout. However, as I'm using mmap and have lots of RAM, Linux
@@ -34,7 +34,10 @@ My takeaways for a performant solution (⚠️ **SPOILER ALERT**):
   byte
   - uses optimized AVX instructions, which rustc surprisingly can't use, even
     with `RUSTFLAGS=-C target-cpu=native`
-- I never iterate any data twice / more than necessary
+- encode all measurements as integers multiplied by ten
+  - `-15.7` -> `-157`
+  - --> no f32 on hot path
+- never iterate any data twice / more than necessary
   - first look for `;`, then for `\n`
 - **NO** allocations on the hot path (use pre-allocated buffers where necessary)
 - there are faster hashing algorithms than the one from the standard library,

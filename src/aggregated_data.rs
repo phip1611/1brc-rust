@@ -1,20 +1,23 @@
 use likely_stable::unlikely;
 use std::cmp::{max_by, min_by};
 
+/// Aggregated data per station. The temperature is encoded as integer
+/// multiplied by 10. `-15.7 => -157`. The corresponding getters return the real
+/// value.
 #[derive(Debug, PartialEq)]
 pub struct AggregatedData {
-    pub min: f32,
-    pub max: f32,
-    sum: f32,
-    sample_count: usize,
+    min: i16,
+    max: i16,
+    sum: i64,
+    sample_count: u32,
 }
 
 impl Default for AggregatedData {
     fn default() -> Self {
         Self {
-            min: f32::MAX,
-            max: f32::MIN,
-            sum: 0.0,
+            min: i16::MAX,
+            max: i16::MIN,
+            sum: 0,
             sample_count: 0,
         }
     }
@@ -22,7 +25,7 @@ impl Default for AggregatedData {
 
 impl AggregatedData {
     #[cfg(test)]
-    pub fn new(min: f32, max: f32, sum: f32, sample_count: usize) -> Self {
+    pub fn new(min: i16, max: i16, sum: i64, sample_count: u32) -> Self {
         Self {
             min,
             max,
@@ -32,7 +35,7 @@ impl AggregatedData {
     }
 
     #[allow(clippy::collapsible_else_if)]
-    pub fn add_datapoint(&mut self, measurement: f32) {
+    pub fn add_datapoint(&mut self, measurement: i16) {
         if unlikely(self.empty()) {
             self.min = measurement;
             self.max = measurement;
@@ -44,7 +47,7 @@ impl AggregatedData {
             }
         }
 
-        self.sum += measurement;
+        self.sum += measurement as i64;
         self.sample_count += 1;
     }
 
@@ -57,11 +60,30 @@ impl AggregatedData {
     }
 
     pub fn avg(&self) -> f32 {
-        self.sum / self.sample_count as f32
+        self.sum as f32 / ((self.sample_count * 10) as f32)
+    }
+
+    pub fn max(&self) -> f32 {
+        self.max as f32 / 10.0
+    }
+
+    pub fn min(&self) -> f32 {
+        self.min as f32 / 10.0
     }
 
     /// Hasn't received a data point so far.
     fn empty(&self) -> bool {
-        self.max == f32::MIN
+        self.max == i16::MIN
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::aggregated_data::AggregatedData;
+    use std::mem::size_of;
+
+    #[test]
+    fn layout() {
+        assert_eq!(size_of::<AggregatedData>(), 8);
     }
 }
