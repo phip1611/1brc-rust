@@ -14,8 +14,6 @@ use fnv::FnvHashMap as HashMap;
 use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use std::hint::black_box;
-use std::io::Write;
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::str::FromStr;
 use std::thread::available_parallelism;
@@ -75,14 +73,6 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
         .chain(core::iter::once(stats));
 
     finalize(thread_results_iter, print);
-    if print {
-        let mut s = UnixStream::connect("/tmp/1brc-notify-socket").unwrap();
-        s.write(&[1_u8]).unwrap();
-    }
-    // eprintln!("notified socket");
-    //let begin = Instant::now();
-    //drop(mmap);
-    //println!("unmap took {:?}", begin.elapsed());
 }
 
 /// Opens the file by mapping it via mmap into the address space of the program.

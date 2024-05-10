@@ -1,6 +1,4 @@
-use std::fs;
-use std::io::Read;
-use std::os::unix::net::UnixListener;
+use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -19,31 +17,28 @@ fn main() {
     // to go. A workaround to prevent the big overhead of unmapping is to use a
     // child process and do the unmapping there. The main process exits as soon
     // as the child performed its work.
-    //
-    // The worker currently notifies the main process that it is done via a
-    // UNIX domain socket. The overhead is negligible compared to the
-    // performance save.
     if is_worker {
         // mmap (and unmap) happens in child.
         phips_1brc::process_multi_threaded(file, true);
     } else {
         // Child has no drop implementation, and we don't manually wait for it.
         // We are not blocked on in.
-        let _child = Command::new(program)
+        let mut child = Command::new(program)
             .args([file, "is_worker".to_string()])
-            .stdout(Stdio::inherit())
+            .stdout(Stdio::piped())
             .spawn()
             .unwrap();
 
-        // TODO is there a more lightweight notification mechanism?
-        let socket = UnixListener::bind("/tmp/1brc-notify-socket").unwrap();
-        // eprintln!("waiting for socket info");
-        socket.incoming().take(1).for_each(|x| {
-            let mut s = x.unwrap();
-            s.read(&mut [0]).unwrap();
-        });
-        // eprintln!("got notified via socket");
+        let child_stdout = child.stdout.take().unwrap();
+        let mut stdout_reader = BufReader::new(child_stdout);
+        let mut worker_output = String::new();
+        // Synchronization point.
+        //
+        // We don't read until EOF but just this one line, which is the target
+        // output of the challenge. Then, we don't care about the child, which
+        // performs the very expensive mmap cleanup in background.
+        stdout_reader.read_line(&mut worker_output).unwrap();
+        println!("{worker_output}");
         println!("took {:?}", begin.elapsed());
-        fs::remove_file("/tmp/1brc-notify-socket").unwrap();
     }
 }
