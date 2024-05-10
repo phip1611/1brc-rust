@@ -130,7 +130,7 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
         let measurement = &remaining_bytes[(n1 + 1)..n2];
         let measurement = unsafe { core::str::from_utf8_unchecked(measurement) };
 
-        let measurement = TODO
+        let measurement = fast_f32_parse_encoded(measurement);
 
         // Ensure the next iteration works on the next line.
         // +1: skip "\n"
@@ -155,6 +155,45 @@ fn cpu_count(size: usize) -> usize {
         1
     } else {
         available_parallelism().unwrap().into()
+    }
+}
+
+/// Optimized fast decimal number parsing that encodes a float in an integer,
+/// which is multiplied by 10.
+///
+/// This benefits from the fact that we know that all input data has exactly 1
+/// decimal place.
+///
+/// - `15.5` -> `155`
+/// - `-7.1` -> `-71`
+///
+/// The range of possible values is within `-99.9..=99.9`.
+///
+/// To get back to the actual floating point value, one has to convert the value
+/// to float and divide it by 10.
+fn fast_f32_parse_encoded(input: &str) -> i16 {
+    let mut bytes = input.as_bytes();
+
+    let negative = bytes[0] == b'-';
+
+    if negative {
+        // Only parse digits.
+        bytes = &bytes[1..];
+    }
+
+    let mut val = 0;
+    for &byte in bytes {
+        if byte == b'.' {
+            continue;
+        }
+        let digit = (byte - b'0') as i16;
+        val = val * 10 + digit;
+    }
+
+    if negative {
+        -val
+    } else {
+        val
     }
 }
 
@@ -243,9 +282,11 @@ mod tests {
     }
 
     #[test]
-    fn test_float_str_to_int() {
-        assert_eq!(float_str_to_10xint("5", "0"), 50);
-        assert_eq!(float_str_to_10xint("5", "7"), 57);
-        assert_eq!(float_str_to_10xint("-5", "7"), -57);
+    fn test_fast_f32_parse() {
+        assert_eq!(fast_f32_parse_encoded("0.0"), 00);
+        assert_eq!(fast_f32_parse_encoded("5.0"), 50);
+        assert_eq!(fast_f32_parse_encoded("5.7"), 57);
+        assert_eq!(fast_f32_parse_encoded("-5.7"), -57);
+        assert_eq!(fast_f32_parse_encoded("-99.9"), -999);
     }
 }
