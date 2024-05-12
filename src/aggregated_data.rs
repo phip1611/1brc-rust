@@ -4,12 +4,13 @@ use std::cmp::{max_by, min_by};
 /// Aggregated data per station. The temperature is encoded as integer
 /// multiplied by 10. `-15.7 => -157`. The corresponding getters return the real
 /// value.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AggregatedData {
     min: i16,
     max: i16,
     sum: i64,
     sample_count: u32,
+    name: String,
 }
 
 impl Default for AggregatedData {
@@ -19,6 +20,7 @@ impl Default for AggregatedData {
             max: i16::MIN,
             sum: 0,
             sample_count: 0,
+            name: String::new(),
         }
     }
 }
@@ -31,7 +33,13 @@ impl AggregatedData {
             max,
             sum,
             sample_count,
+            ..Default::default()
         }
+    }
+
+    pub fn init(&mut self, name: &str) {
+        assert!(self.name.is_empty(), "must only be initialized once");
+        self.name.push_str(name);
     }
 
     #[allow(clippy::collapsible_else_if)]
@@ -58,6 +66,11 @@ impl AggregatedData {
         self.sum += other.sum;
         self.sample_count += other.sample_count;
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
 
     pub fn avg(&self) -> f32 {
         self.sum as f32 / ((self.sample_count * 10) as f32)

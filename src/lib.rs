@@ -8,12 +8,16 @@ mod aggregated_data;
 mod chunk_iter;
 
 use crate::chunk_iter::ChunkIter;
-use crate::data_set_properties::{MIN_MEASUREMENT_LEN, MIN_STATION_LEN, STATIONS_IN_DATASET};
+use crate::data_set_properties::{
+    ALL_STATIONS, MIN_MEASUREMENT_LEN, MIN_STATION_LEN, STATIONS_IN_DATASET,
+};
 use aggregated_data::AggregatedData;
 use fnv::FnvHashMap as HashMap;
 use memmap::{Mmap, MmapOptions};
+use ptr_hash::{PtrHash, PtrHashParams};
 use std::fs::File;
 use std::hint::black_box;
+use std::io::Write;
 use std::path::Path;
 use std::str::from_utf8_unchecked;
 use std::thread::available_parallelism;
@@ -27,6 +31,436 @@ mod data_set_properties {
     pub const MIN_STATION_LEN: usize = 3;
     /// The minimum measurement (str) len (for example: `6.6`).
     pub const MIN_MEASUREMENT_LEN: usize = 3;
+
+    pub const ALL_STATIONS: [&'static str; STATIONS_IN_DATASET] = [
+        "Abha",
+        "Abidjan",
+        "Abéché",
+        "Accra",
+        "Addis Ababa",
+        "Adelaide",
+        "Aden",
+        "Ahvaz",
+        "Albuquerque",
+        "Alexandra",
+        "Alexandria",
+        "Algiers",
+        "Alice Springs",
+        "Almaty",
+        "Amsterdam",
+        "Anadyr",
+        "Anchorage",
+        "Andorra la Vella",
+        "Ankara",
+        "Antananarivo",
+        "Antsiranana",
+        "Arkhangelsk",
+        "Ashgabat",
+        "Asmara",
+        "Assab",
+        "Astana",
+        "Athens",
+        "Atlanta",
+        "Auckland",
+        "Austin",
+        "Baghdad",
+        "Baguio",
+        "Baku",
+        "Baltimore",
+        "Bamako",
+        "Bangkok",
+        "Bangui",
+        "Banjul",
+        "Barcelona",
+        "Bata",
+        "Batumi",
+        "Beijing",
+        "Beirut",
+        "Belgrade",
+        "Belize City",
+        "Benghazi",
+        "Bergen",
+        "Berlin",
+        "Bilbao",
+        "Birao",
+        "Bishkek",
+        "Bissau",
+        "Blantyre",
+        "Bloemfontein",
+        "Boise",
+        "Bordeaux",
+        "Bosaso",
+        "Boston",
+        "Bouaké",
+        "Bratislava",
+        "Brazzaville",
+        "Bridgetown",
+        "Brisbane",
+        "Brussels",
+        "Bucharest",
+        "Budapest",
+        "Bujumbura",
+        "Bulawayo",
+        "Burnie",
+        "Busan",
+        "Cabo San Lucas",
+        "Cairns",
+        "Cairo",
+        "Calgary",
+        "Canberra",
+        "Cape Town",
+        "Changsha",
+        "Charlotte",
+        "Chiang Mai",
+        "Chicago",
+        "Chihuahua",
+        "Chittagong",
+        "Chișinău",
+        "Chongqing",
+        "Christchurch",
+        "City of San Marino",
+        "Colombo",
+        "Columbus",
+        "Conakry",
+        "Copenhagen",
+        "Cotonou",
+        "Cracow",
+        "Da Lat",
+        "Da Nang",
+        "Dakar",
+        "Dallas",
+        "Damascus",
+        "Dampier",
+        "Dar es Salaam",
+        "Darwin",
+        "Denpasar",
+        "Denver",
+        "Detroit",
+        "Dhaka",
+        "Dikson",
+        "Dili",
+        "Djibouti",
+        "Dodoma",
+        "Dolisie",
+        "Douala",
+        "Dubai",
+        "Dublin",
+        "Dunedin",
+        "Durban",
+        "Dushanbe",
+        "Edinburgh",
+        "Edmonton",
+        "El Paso",
+        "Entebbe",
+        "Erbil",
+        "Erzurum",
+        "Fairbanks",
+        "Fianarantsoa",
+        "Flores,  Petén",
+        "Frankfurt",
+        "Fresno",
+        "Fukuoka",
+        "Gaborone",
+        "Gabès",
+        "Gagnoa",
+        "Gangtok",
+        "Garissa",
+        "Garoua",
+        "George Town",
+        "Ghanzi",
+        "Gjoa Haven",
+        "Guadalajara",
+        "Guangzhou",
+        "Guatemala City",
+        "Halifax",
+        "Hamburg",
+        "Hamilton",
+        "Hanga Roa",
+        "Hanoi",
+        "Harare",
+        "Harbin",
+        "Hargeisa",
+        "Hat Yai",
+        "Havana",
+        "Helsinki",
+        "Heraklion",
+        "Hiroshima",
+        "Ho Chi Minh City",
+        "Hobart",
+        "Hong Kong",
+        "Honiara",
+        "Honolulu",
+        "Houston",
+        "Ifrane",
+        "Indianapolis",
+        "Iqaluit",
+        "Irkutsk",
+        "Istanbul",
+        "Jacksonville",
+        "Jakarta",
+        "Jayapura",
+        "Jerusalem",
+        "Johannesburg",
+        "Jos",
+        "Juba",
+        "Kabul",
+        "Kampala",
+        "Kandi",
+        "Kankan",
+        "Kano",
+        "Kansas City",
+        "Karachi",
+        "Karonga",
+        "Kathmandu",
+        "Khartoum",
+        "Kingston",
+        "Kinshasa",
+        "Kolkata",
+        "Kuala Lumpur",
+        "Kumasi",
+        "Kunming",
+        "Kuopio",
+        "Kuwait City",
+        "Kyiv",
+        "Kyoto",
+        "La Ceiba",
+        "La Paz",
+        "Lagos",
+        "Lahore",
+        "Lake Havasu City",
+        "Lake Tekapo",
+        "Las Palmas de Gran Canaria",
+        "Las Vegas",
+        "Launceston",
+        "Lhasa",
+        "Libreville",
+        "Lisbon",
+        "Livingstone",
+        "Ljubljana",
+        "Lodwar",
+        "Lomé",
+        "London",
+        "Los Angeles",
+        "Louisville",
+        "Luanda",
+        "Lubumbashi",
+        "Lusaka",
+        "Luxembourg City",
+        "Lviv",
+        "Lyon",
+        "Madrid",
+        "Mahajanga",
+        "Makassar",
+        "Makurdi",
+        "Malabo",
+        "Malé",
+        "Managua",
+        "Manama",
+        "Mandalay",
+        "Mango",
+        "Manila",
+        "Maputo",
+        "Marrakesh",
+        "Marseille",
+        "Maun",
+        "Medan",
+        "Mek'ele",
+        "Melbourne",
+        "Memphis",
+        "Mexicali",
+        "Mexico City",
+        "Miami",
+        "Milan",
+        "Milwaukee",
+        "Minneapolis",
+        "Minsk",
+        "Mogadishu",
+        "Mombasa",
+        "Monaco",
+        "Moncton",
+        "Monterrey",
+        "Montreal",
+        "Moscow",
+        "Mumbai",
+        "Murmansk",
+        "Muscat",
+        "Mzuzu",
+        "N'Djamena",
+        "Naha",
+        "Nairobi",
+        "Nakhon Ratchasima",
+        "Napier",
+        "Napoli",
+        "Nashville",
+        "Nassau",
+        "Ndola",
+        "New Delhi",
+        "New Orleans",
+        "New York City",
+        "Ngaoundéré",
+        "Niamey",
+        "Nicosia",
+        "Niigata",
+        "Nouadhibou",
+        "Nouakchott",
+        "Novosibirsk",
+        "Nuuk",
+        "Odesa",
+        "Odienné",
+        "Oklahoma City",
+        "Omaha",
+        "Oranjestad",
+        "Oslo",
+        "Ottawa",
+        "Ouagadougou",
+        "Ouahigouya",
+        "Ouarzazate",
+        "Oulu",
+        "Palembang",
+        "Palermo",
+        "Palm Springs",
+        "Palmerston North",
+        "Panama City",
+        "Parakou",
+        "Paris",
+        "Perth",
+        "Petropavlovsk-Kamchatsky",
+        "Philadelphia",
+        "Phnom Penh",
+        "Phoenix",
+        "Pittsburgh",
+        "Podgorica",
+        "Pointe-Noire",
+        "Pontianak",
+        "Port Moresby",
+        "Port Sudan",
+        "Port Vila",
+        "Port-Gentil",
+        "Portland (OR)",
+        "Porto",
+        "Prague",
+        "Praia",
+        "Pretoria",
+        "Pyongyang",
+        "Rabat",
+        "Rangpur",
+        "Reggane",
+        "Reykjavík",
+        "Riga",
+        "Riyadh",
+        "Rome",
+        "Roseau",
+        "Rostov-on-Don",
+        "Sacramento",
+        "Saint Petersburg",
+        "Saint-Pierre",
+        "Salt Lake City",
+        "San Antonio",
+        "San Diego",
+        "San Francisco",
+        "San Jose",
+        "San José",
+        "San Juan",
+        "San Salvador",
+        "Sana'a",
+        "Santo Domingo",
+        "Sapporo",
+        "Sarajevo",
+        "Saskatoon",
+        "Seattle",
+        "Seoul",
+        "Seville",
+        "Shanghai",
+        "Singapore",
+        "Skopje",
+        "Sochi",
+        "Sofia",
+        "Sokoto",
+        "Split",
+        "St. John's",
+        "St. Louis",
+        "Stockholm",
+        "Surabaya",
+        "Suva",
+        "Suwałki",
+        "Sydney",
+        "Ségou",
+        "Tabora",
+        "Tabriz",
+        "Taipei",
+        "Tallinn",
+        "Tamale",
+        "Tamanrasset",
+        "Tampa",
+        "Tashkent",
+        "Tauranga",
+        "Tbilisi",
+        "Tegucigalpa",
+        "Tehran",
+        "Tel Aviv",
+        "Thessaloniki",
+        "Thiès",
+        "Tijuana",
+        "Timbuktu",
+        "Tirana",
+        "Toamasina",
+        "Tokyo",
+        "Toliara",
+        "Toluca",
+        "Toronto",
+        "Tripoli",
+        "Tromsø",
+        "Tucson",
+        "Tunis",
+        "Ulaanbaatar",
+        "Upington",
+        "Vaduz",
+        "Valencia",
+        "Valletta",
+        "Vancouver",
+        "Veracruz",
+        "Vienna",
+        "Vientiane",
+        "Villahermosa",
+        "Vilnius",
+        "Virginia Beach",
+        "Vladivostok",
+        "Warsaw",
+        "Washington, D.C.",
+        "Wau",
+        "Wellington",
+        "Whitehorse",
+        "Wichita",
+        "Willemstad",
+        "Winnipeg",
+        "Wrocław",
+        "Xi'an",
+        "Yakutsk",
+        "Yangon",
+        "Yaoundé",
+        "Yellowknife",
+        "Yerevan",
+        "Yinchuan",
+        "Zagreb",
+        "Zanzibar City",
+        "Zürich",
+        "Ürümqi",
+        "İzmir",
+    ];
+}
+
+fn init_lookup_structure() -> (PtrHash<&'static str>, Vec<AggregatedData>) {
+    let mphf = <PtrHash<_>>::new(&ALL_STATIONS, PtrHashParams::default());
+    // Map-like vector. Indices map to elements.
+    let mut map = vec![AggregatedData::default(); ALL_STATIONS.len()];
+
+    // Init all entries with data that is already known.
+    for station in ALL_STATIONS {
+        let index = mphf.index_minimal(&station);
+        map[index].init(station);
+    }
+
+    (mphf, map)
 }
 
 /// Processes all data according to the 1brc challenge by using a
@@ -34,9 +468,11 @@ mod data_set_properties {
 pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
     let (_mmap, bytes) = unsafe { open_file(path) };
 
-    let stats = process_file_chunk(bytes);
+    let (hasher, lookup_structure) = init_lookup_structure();
 
-    finalize([stats].into_iter(), print);
+    let stats = process_file_chunk(bytes, &hasher, lookup_structure);
+
+    finalize([stats].into_iter(), &hasher, print);
 }
 
 /// Processes all data according to the 1brc challenge by using a
@@ -46,6 +482,8 @@ pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
     let (_mmap, bytes) = unsafe { open_file(path) };
 
+    let (hasher, lookup_structure) = init_lookup_structure();
+
     let cpus = cpu_count(bytes.len());
 
     let mut thread_handles = Vec::with_capacity(cpus);
@@ -53,15 +491,22 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
     let mut iter = ChunkIter::new(bytes, cpus);
     let main_thread_chunk = iter.next().unwrap();
 
+    let hasher_ref = &hasher;
+
     for chunk in iter {
         // Spawning the threads is negligible cheap.
         // TODO it surprises me that rustc won't force me to transmute `chunk`
         //  to a &static lifetime.
-        let handle = thread::spawn(move || process_file_chunk(chunk));
+
+        let hasher = unsafe { core::mem::transmute::<_, &'static _>(hasher_ref) };
+
+        let lookup_structure = lookup_structure.clone();
+
+        let handle = thread::spawn(move || process_file_chunk(chunk, &hasher, lookup_structure));
         thread_handles.push(handle);
     }
 
-    let stats = process_file_chunk(main_thread_chunk);
+    let stats = process_file_chunk(main_thread_chunk, hasher_ref, lookup_structure);
 
     debug_assert_eq!(
         thread_handles.len(),
@@ -74,7 +519,7 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
         .map(|handle| handle.join().unwrap())
         .chain(core::iter::once(stats));
 
-    finalize(thread_results_iter, print);
+    finalize(thread_results_iter, &hasher, print);
 }
 
 /// Opens the file by mapping it via mmap into the address space of the program.
@@ -98,12 +543,14 @@ unsafe fn open_file<'a>(path: impl AsRef<Path>) -> (Mmap, &'a [u8]) {
 /// unnecessary comparisons. I optimized the shit out of this :D
 ///
 /// The returned data structure is not sorted.
-fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
+fn process_file_chunk(
+    bytes: &[u8],
+    hasher: &PtrHash<&str>,
+    mut lookup_structure: Vec<AggregatedData>,
+) -> Vec<AggregatedData> {
     assert!(!bytes.is_empty());
     let &last_byte = bytes.last().unwrap();
     assert_eq!(last_byte, b'\n');
-
-    let mut stats = HashMap::with_capacity_and_hasher(STATIONS_IN_DATASET, Default::default());
 
     // In each iteration, I read a line in two dedicated steps:
     // 1.) read city name
@@ -136,18 +583,15 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
         // Ensure the next iteration works on the next line.
         consumed_bytes_count += newline + 1;
 
-        // In the data set, there aren't that many different entries. So
-        // most of the time, we take the `and_modify` branch.
-        stats
-            .entry(station)
-            .and_modify(|data: &mut AggregatedData| data.add_datapoint(measurement))
-            .or_insert_with(|| {
-                let mut data = AggregatedData::default();
-                data.add_datapoint(measurement);
-                data
-            });
+        let index = hasher.index_minimal(&station);
+
+        unsafe {
+            lookup_structure
+                .get_unchecked_mut(index)
+                .add_datapoint(measurement);
+        }
     }
-    stats
+    lookup_structure
 }
 
 fn cpu_count(size: usize) -> usize {
@@ -198,48 +642,52 @@ fn fast_f32_parse_encoded(input: &str) -> i16 {
 }
 
 /// Aggregates the results and, optionally, prints them.
-fn finalize<'a>(stats: impl Iterator<Item = HashMap<&'a str, AggregatedData>>, print: bool) {
+fn finalize<'a>(
+    stats: impl Iterator<Item = Vec<AggregatedData>>,
+    hasher: &PtrHash<&str>,
+    print: bool,
+) {
+    let mut combined_results = vec![AggregatedData::default(); STATIONS_IN_DATASET];
+
     // This reduce step is surprisingly negligible cheap.
-    let stats = stats
-        .reduce(|mut acc, next| {
-            next.into_iter().for_each(|(station, new_data)| {
-                acc.entry(station)
-                    .and_modify(|data| {
-                        data.merge(&new_data);
-                    })
-                    .or_insert(new_data);
-            });
-            acc
-        })
-        .unwrap();
+    for vector in stats {
+        for elem in vector {
+            let index = hasher.index_minimal(&elem.name());
+
+            if combined_results[index].name().is_empty() {
+                combined_results[index].init(elem.name());
+            }
+
+            combined_results[index].merge(&elem);
+        }
+    }
 
     // Sort everything into a vector. The costs of this are negligible cheap.
-    let mut stats = stats.into_iter().collect::<Vec<_>>();
-    stats.sort_unstable_by(|(station_a, _), (station_b, _)| {
-        station_a.partial_cmp(station_b).unwrap()
-    });
+    combined_results
+        .sort_unstable_by(|data_a, data_b| data_a.name().partial_cmp(data_b.name()).unwrap());
 
     if print {
-        print_results(stats.into_iter())
+        print_results(combined_results.into_iter())
     } else {
         // black-box: prevent the compiler from optimizing any calculations away
-        let _x = black_box(stats);
+        let _x = black_box(combined_results);
     }
 }
 
 /// Prints the results. The costs of this function are negligible cheap.
-fn print_results<'a>(stats: impl ExactSizeIterator<Item = (&'a str, AggregatedData)>) {
+fn print_results<'a>(stats: impl ExactSizeIterator<Item = AggregatedData>) {
     print!("{{");
     let n = stats.len();
     stats
         .enumerate()
-        .map(|(index, x)| (index == n - 1, x))
-        .for_each(|(is_last, (city, measurements))| {
+        .map(|(index, val)| (index == n - 1, val))
+        .for_each(|(is_last, val)| {
             print!(
-                "{city}={:.1}/{:.1}/{:.1}",
-                measurements.min(),
-                measurements.avg(),
-                measurements.max()
+                "{}={:.1}/{:.1}/{:.1}",
+                val.name(),
+                val.min(),
+                val.avg(),
+                val.max()
             );
             if !is_last {
                 print!(", ");
