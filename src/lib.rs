@@ -10,7 +10,7 @@ mod chunk_iter;
 use crate::chunk_iter::ChunkIter;
 use crate::data_set_properties::{MIN_MEASUREMENT_LEN, MIN_STATION_LEN, STATIONS_IN_DATASET};
 use aggregated_data::AggregatedData;
-use fnv::{FnvBuildHasher, FnvHashMap as HashMap};
+use fnv::FnvHashMap as HashMap;
 use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use std::hint::black_box;
@@ -138,21 +138,16 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
 
         // In the data set, there aren't that many different entries. So
         // most of the time, we take the `and_modify` branch.
-        insert(&mut stats, station, measurement);
+        stats
+            .entry(station)
+            .and_modify(|data: &mut AggregatedData| data.add_datapoint(measurement))
+            .or_insert_with(|| {
+                let mut data = AggregatedData::default();
+                data.add_datapoint(measurement);
+                data
+            });
     }
     stats
-}
-
-#[inline(never)]
-fn insert<'a>(stats: &mut HashMap<&'a str, AggregatedData>, station: &'a str, measurement: i16) {
-    stats
-        .entry(station)
-        .and_modify(|data: &mut AggregatedData| data.add_datapoint(measurement))
-        .or_insert_with(|| {
-            let mut data = AggregatedData::default();
-            data.add_datapoint(measurement);
-            data
-        });
 }
 
 fn cpu_count(size: usize) -> usize {
