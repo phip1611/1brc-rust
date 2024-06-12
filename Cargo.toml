@@ -9,7 +9,7 @@ codegen-units = 1
 lto = true
 
 [dependencies]
-fnv = "1.0.7"
+gxhash = "3.4.1"
 likely_stable = "0.1.2"
 memchr = "2.7.2"
 memmap = "0.7.0"

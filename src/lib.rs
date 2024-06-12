@@ -10,7 +10,7 @@ mod chunk_iter;
 use crate::chunk_iter::ChunkIter;
 use crate::data_set_properties::{MIN_MEASUREMENT_LEN, MIN_STATION_LEN, STATIONS_IN_DATASET};
 use aggregated_data::AggregatedData;
-use fnv::FnvHashMap as HashMap;
+use gxhash::HashMap;
 use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use std::hint::black_box;
