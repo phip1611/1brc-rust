@@ -4,8 +4,6 @@
 //! All convenience around it, such as allocating a few helpers, is negligible
 //! from my testing.
 
-#![feature(portable_simd)]
-
 mod aggregated_data;
 mod chunk_iter;
 
@@ -17,7 +15,6 @@ use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use std::hint::black_box;
 use std::path::Path;
-use std::simd::cmp::SimdPartialEq;
 use std::str::from_utf8_unchecked;
 use std::thread::available_parallelism;
 use std::{slice, thread};
@@ -93,36 +90,6 @@ unsafe fn open_file<'a>(path: impl AsRef<Path>) -> (Mmap, &'a [u8]) {
     (mmap, file_bytes)
 }
 
-struct BitIterator {
-    mask: u64,
-    pos: usize,
-}
-
-impl BitIterator {
-    pub fn new(mask: u64) -> BitIterator {
-        Self { mask, pos: 0 }
-    }
-}
-
-impl Iterator for BitIterator {
-    type Item = usize;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.pos == 64 {
-                return None;
-            }
-
-            let mask = self.mask >> self.pos;
-            self.pos += 1;
-            if mask & 1 == 1 {
-                return Some(self.pos - 1);
-            }
-        }
-    }
-}
-
 /// Processes a chunk of the file. A chunk begins with the first byte of a line
 /// and ends with a newline (`\n`), but contains an arbitrary amount of lines.
 ///
@@ -139,43 +106,10 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
     let mut stats = HashMap::with_capacity_and_hasher(STATIONS_IN_DATASET, Default::default());
 
     let mut consumed_bytes_count = 0;
-    let newline_splat = std::simd::Simd::<_, 64>::splat(b'\n');
-    let separator_splat = std::simd::Simd::<_, 64>::splat(b';');
     while consumed_bytes_count < bytes.len() {
         let remaining_bytes = &bytes[consumed_bytes_count..];
-
-        if remaining_bytes.len() >= 64 {
-            let data = std::simd::Simd::<u8, 64>::from_slice(&remaining_bytes[0..64]);
-            let separator_bitmask = data.simd_eq(separator_splat).to_bitmask();
-            let newline_bitmask = data.simd_eq(newline_splat).to_bitmask();
-            let separator_bit_iterator = BitIterator::new(separator_bitmask);
-            let newline_bit_iterator = BitIterator::new(newline_bitmask);
-
-            let mut next_line_begin_i = 0;
-            for (newline_pos, separator_pos) in newline_bit_iterator.zip(separator_bit_iterator) {
-                let station_i_begin = next_line_begin_i;
-                let station_i_end = separator_pos;
-                let measurement_i_begin = station_i_end + 1;
-                let measurement_i_end = newline_pos;
-
-                next_line_begin_i = newline_pos + 1;
-
-                let station = &remaining_bytes[station_i_begin..station_i_end];
-                let measurement = &remaining_bytes[measurement_i_begin..measurement_i_end];
-
-                let station = unsafe { from_utf8_unchecked(station) };
-                let measurement = unsafe { from_utf8_unchecked(measurement) };
-
-                let measurement = fast_f32_parse_encoded(measurement);
-
-                insert_measurement(&mut stats, station, measurement);
-            }
-            consumed_bytes_count += next_line_begin_i;
-        } else {
-            let (station, measurement) =
-                process_until_next_line(remaining_bytes, &mut consumed_bytes_count);
-            insert_measurement(&mut stats, station, measurement);
-        }
+        let (station, measurement) = process_line(remaining_bytes, &mut consumed_bytes_count);
+        insert_measurement(&mut stats, station, measurement);
     }
     stats
 }
@@ -185,10 +119,7 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
 /// the `consumed_bytes_count` so that the next iteration can begin at the
 /// beginning of a new line.
 #[inline(always)]
-fn process_until_next_line<'a>(
-    bytes: &'a [u8],
-    consumed_bytes_count: &mut usize,
-) -> (&'a str, i16) {
+fn process_line<'a>(bytes: &'a [u8], consumed_bytes_count: &mut usize) -> (&'a str, i16) {
     // Look for ";", and skip irrelevant bytes beforehand.
     let search_offset = MIN_STATION_LEN;
     let delimiter = memchr::memchr(b';', &bytes[search_offset..])
@@ -367,24 +298,5 @@ mod tests {
         assert_eq!(fast_f32_parse_encoded("5.7"), 57);
         assert_eq!(fast_f32_parse_encoded("-5.7"), -57);
         assert_eq!(fast_f32_parse_encoded("-99.9"), -999);
-    }
-
-    #[test]
-    fn test_bit_iterator() {
-        let mut it = BitIterator::new(0);
-        assert_eq!(it.next(), None);
-
-        let mut it = BitIterator::new(1);
-        assert_eq!(it.next(), Some(0));
-        assert_eq!(it.next(), None);
-
-        let mut it = BitIterator::new(0b110);
-        assert_eq!(it.next(), Some(1));
-        assert_eq!(it.next(), Some(2));
-        assert_eq!(it.next(), None);
-
-        let mut it = BitIterator::new(i64::MIN as u64);
-        assert_eq!(it.next(), Some(63));
-        assert_eq!(it.next(), None);
     }
 }
