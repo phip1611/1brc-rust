@@ -91,11 +91,11 @@ unsafe fn open_file<'a>(path: impl AsRef<Path>) -> (Mmap, &'a [u8]) {
 }
 
 /// Processes a chunk of the file. A chunk begins with the first byte of a line
-/// and ends with a newline (`\n`).
+/// and ends with a newline (`\n`), but contains an arbitrary amount of lines.
 ///
 /// The contained loop is the highly optimized hot path of the data processing.
 /// There are no allocations, no unnecessary buffers, no unnecessary copies, no
-/// unnecessary comparisons. I optimized the shit out of this :D
+/// unnecessary comparisons, no not-inlined function calls.
 ///
 /// The returned data structure is not sorted.
 fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
@@ -105,49 +105,59 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
 
     let mut stats = HashMap::with_capacity_and_hasher(STATIONS_IN_DATASET, Default::default());
 
-    // In each iteration, I read a line in two dedicated steps:
-    // 1.) read city name
-    // 2.) read value
     let mut consumed_bytes_count = 0;
     while consumed_bytes_count < bytes.len() {
-        // Remaining bytes for this loop iteration. Each iteration processes
-        // the bytes until the final newline.
-        //
-        // The following indices and ranges are relative within the bytes
-        // representing the current line.
         let remaining_bytes = &bytes[consumed_bytes_count..];
-
-        // Look for ";", and skip irrelevant bytes beforehand.
-        let search_offset = MIN_STATION_LEN;
-        let delimiter = memchr::memchr(b';', &remaining_bytes[search_offset..])
-            .map(|pos| pos + search_offset)
-            .unwrap();
-        // Look for "\n", and skip irrelevant bytes beforehand.
-        let search_offset = delimiter + 1 + MIN_MEASUREMENT_LEN;
-        let newline = memchr::memchr(b'\n', &remaining_bytes[search_offset..])
-            .map(|pos| pos + search_offset)
-            .unwrap();
-
-        let station = unsafe { from_utf8_unchecked(&remaining_bytes[0..delimiter]) };
-        let measurement = unsafe { from_utf8_unchecked(&remaining_bytes[delimiter + 1..newline]) };
-
-        let measurement = fast_f32_parse_encoded(measurement);
-
-        // Ensure the next iteration works on the next line.
-        consumed_bytes_count += newline + 1;
-
-        // In the data set, there aren't that many different entries. So
-        // most of the time, we take the `and_modify` branch.
-        stats
-            .entry(station)
-            .and_modify(|data: &mut AggregatedData| data.add_datapoint(measurement))
-            .or_insert_with(|| {
-                let mut data = AggregatedData::default();
-                data.add_datapoint(measurement);
-                data
-            });
+        let (station, measurement) = process_line(remaining_bytes, &mut consumed_bytes_count);
+        insert_measurement(&mut stats, station, measurement);
     }
     stats
+}
+
+/// Reads a line from the bytes and processes it. This expects that `bytes[0]`
+/// is the beginning of a new line. It returns the processed data and updates
+/// the `consumed_bytes_count` so that the next iteration can begin at the
+/// beginning of a new line.
+#[inline(always)]
+fn process_line<'a>(bytes: &'a [u8], consumed_bytes_count: &mut usize) -> (&'a str, i16) {
+    // Look for ";", and skip irrelevant bytes beforehand.
+    let search_offset = MIN_STATION_LEN;
+    let delimiter = memchr::memchr(b';', &bytes[search_offset..])
+        .map(|pos| pos + search_offset)
+        .unwrap();
+    // Look for "\n", and skip irrelevant bytes beforehand.
+    let search_offset = delimiter + 1 + MIN_MEASUREMENT_LEN;
+    let newline = memchr::memchr(b'\n', &bytes[search_offset..])
+        .map(|pos| pos + search_offset)
+        .unwrap();
+
+    let station = unsafe { from_utf8_unchecked(&bytes[0..delimiter]) };
+    let measurement = unsafe { from_utf8_unchecked(&bytes[delimiter + 1..newline]) };
+
+    let measurement = fast_f32_parse_encoded(measurement);
+
+    // Ensure the next iteration works on the next line.
+    *consumed_bytes_count += newline + 1;
+
+    (station, measurement)
+}
+
+#[inline(always)]
+fn insert_measurement<'a>(
+    stats: &mut HashMap<&'a str, AggregatedData>,
+    station: &'a str,
+    measurement: i16,
+) {
+    // In the data set, there aren't that many different entries. So
+    // most of the time, we take the `and_modify` branch.
+    stats
+        .entry(station)
+        .and_modify(|data: &mut AggregatedData| data.add_datapoint(measurement))
+        .or_insert_with(|| {
+            let mut data = AggregatedData::default();
+            data.add_datapoint(measurement);
+            data
+        });
 }
 
 fn cpu_count(size: usize) -> usize {
