@@ -4,7 +4,7 @@ use std::cmp::{max_by, min_by};
 /// Aggregated data per station. The temperature is encoded as integer
 /// multiplied by 10. `-15.7 => -157`. The corresponding getters return the real
 /// value.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AggregatedData {
     min: i16,
     max: i16,
@@ -25,7 +25,7 @@ impl Default for AggregatedData {
 
 impl AggregatedData {
     #[cfg(test)]
-    pub fn new(min: i16, max: i16, sum: i64, sample_count: u32) -> Self {
+    pub const fn new(min: i16, max: i16, sum: i64, sample_count: u32) -> Self {
         Self {
             min,
             max,
@@ -72,7 +72,7 @@ impl AggregatedData {
     }
 
     /// Hasn't received a data point so far.
-    fn empty(&self) -> bool {
+    const fn empty(&self) -> bool {
         self.max == i16::MIN
     }
 }

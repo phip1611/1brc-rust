@@ -11,7 +11,7 @@ pub struct ChunkIter<'a> {
 }
 
 impl<'a> ChunkIter<'a> {
-    pub fn new(file_bytes: &'a [u8], chunk_count: usize) -> Self {
+    pub const fn new(file_bytes: &'a [u8], chunk_count: usize) -> Self {
         let bytes_per_chunk = file_bytes.len().div_ceil(chunk_count);
         Self {
             file_bytes,

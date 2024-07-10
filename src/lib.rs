@@ -4,6 +4,30 @@
 //! All convenience around it, such as allocating a few helpers, is negligible
 //! from my testing.
 
+#![deny(
+    clippy::all,
+    clippy::cargo,
+    clippy::nursery,
+    clippy::must_use_candidate,
+    // clippy::restriction,
+    // clippy::pedantic
+)]
+// now allow a few rules which are denied by the above statement
+// --> they are ridiculous and not necessary
+#![allow(
+    clippy::suboptimal_flops,
+    clippy::redundant_pub_crate,
+    clippy::fallible_impl_from
+)]
+// I can't do anything about this; fault of the dependencies
+#![allow(clippy::multiple_crate_versions)]
+// allow: required because of derive macro.. :(
+#![allow(clippy::use_self)]
+// Not needed here. We only need this for the library!
+// #![deny(missing_docs)]
+#![deny(missing_debug_implementations)]
+#![deny(rustdoc::all)]
+
 mod aggregated_data;
 mod chunk_iter;
 
@@ -11,13 +35,13 @@ use crate::chunk_iter::ChunkIter;
 use crate::data_set_properties::{MIN_MEASUREMENT_LEN, MIN_STATION_LEN, STATIONS_IN_DATASET};
 use aggregated_data::AggregatedData;
 use gxhash::HashMap;
-use memmap::{Mmap, MmapOptions};
+use memmap2::{Mmap, MmapOptions};
 use std::fs::File;
 use std::hint::black_box;
 use std::path::Path;
 use std::str::from_utf8_unchecked;
 use std::thread::available_parallelism;
-use std::{slice, thread};
+use std::{iter, slice, thread};
 
 /// Some characteristics specifically to the [1BRC data set](https://github.com/gunnarmorling/1brc/blob/db064194be375edc02d6dbcd21268ad40f7e2869/src/main/java/dev/morling/onebrc/CreateMeasurements.java).
 mod data_set_properties {
@@ -36,7 +60,7 @@ pub fn process_single_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 
     let stats = process_file_chunk(bytes);
 
-    finalize([stats].into_iter(), print);
+    finalize(iter::once(stats), print);
 }
 
 /// Processes all data according to the 1brc challenge by using a
@@ -83,7 +107,7 @@ pub fn process_multi_threaded(path: impl AsRef<Path> + Clone, print: bool) {
 /// The returned buffer is only valid as long as the returned `Mmap` lives.
 unsafe fn open_file<'a>(path: impl AsRef<Path>) -> (Mmap, &'a [u8]) {
     let file = File::open(path).unwrap();
-    let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
+    let mmap = unsafe { MmapOptions::new().huge(None).map(&file).unwrap() };
     // Only valid as long as `mmap` lives.
     let file_bytes: &[u8] = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
 

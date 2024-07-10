@@ -12,7 +12,7 @@ lto = true
 gxhash = "3.4.1"
 likely_stable = "0.1.2"
 memchr = "2.7.2"
-memmap = "0.7.0"
+memmap2 = "0.9.4"
 
 [[bench]]
 name = "bench"

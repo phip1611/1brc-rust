@@ -1,3 +1,27 @@
+#![deny(
+    clippy::all,
+    clippy::cargo,
+    clippy::nursery,
+    clippy::must_use_candidate,
+    // clippy::restriction,
+    // clippy::pedantic
+)]
+// now allow a few rules which are denied by the above statement
+// --> they are ridiculous and not necessary
+#![allow(
+    clippy::suboptimal_flops,
+    clippy::redundant_pub_crate,
+    clippy::fallible_impl_from
+)]
+// I can't do anything about this; fault of the dependencies
+#![allow(clippy::multiple_crate_versions)]
+// allow: required because of derive macro.. :(
+#![allow(clippy::use_self)]
+// Not needed here. We only need this for the library!
+// #![deny(missing_docs)]
+#![deny(missing_debug_implementations)]
+#![deny(rustdoc::all)]
+
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -8,8 +32,10 @@ fn main() {
     let begin = Instant::now();
     let mut args_iter = std::env::args();
     let program = args_iter.next().unwrap();
-    let file = args_iter.next().unwrap_or("./measurements.txt".to_string());
-    let is_worker = args_iter.next().unwrap_or("".to_string()) == "is_worker";
+    let file = args_iter
+        .next()
+        .unwrap_or_else(|| "./measurements.txt".to_string());
+    let is_worker = args_iter.next().unwrap_or_default() == "is_worker";
 
     // Unmapping the whole file is expensive (roughly 200ms on my machine). As
     // unmapping the file from the address space is part of the normal Linux
