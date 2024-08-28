@@ -131,7 +131,7 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
 
     let mut consumed_bytes_count = 0;
     while consumed_bytes_count < bytes.len() {
-        let remaining_bytes = &bytes[consumed_bytes_count..];
+        let remaining_bytes = &unsafe { bytes.get_unchecked(consumed_bytes_count..) };
         let (station, measurement) = process_line(remaining_bytes, &mut consumed_bytes_count);
         insert_measurement(&mut stats, station, measurement);
     }
@@ -146,17 +146,17 @@ fn process_file_chunk(bytes: &[u8]) -> HashMap<&str, AggregatedData> {
 fn process_line<'a>(bytes: &'a [u8], consumed_bytes_count: &mut usize) -> (&'a str, i16) {
     // Look for ";", and skip irrelevant bytes beforehand.
     let search_offset = MIN_STATION_LEN;
-    let delimiter = memchr::memchr(b';', &bytes[search_offset..])
+    let delimiter = memchr::memchr(b';', &unsafe { bytes.get_unchecked(search_offset..) })
         .map(|pos| pos + search_offset)
         .unwrap();
     // Look for "\n", and skip irrelevant bytes beforehand.
     let search_offset = delimiter + 1 + MIN_MEASUREMENT_LEN;
-    let newline = memchr::memchr(b'\n', &bytes[search_offset..])
+    let newline = memchr::memchr(b'\n', &unsafe { bytes.get_unchecked(search_offset..) })
         .map(|pos| pos + search_offset)
         .unwrap();
 
-    let station = unsafe { from_utf8_unchecked(&bytes[0..delimiter]) };
-    let measurement = unsafe { from_utf8_unchecked(&bytes[delimiter + 1..newline]) };
+    let station = unsafe { from_utf8_unchecked(&bytes.get_unchecked(0..delimiter)) };
+    let measurement = unsafe { from_utf8_unchecked(&bytes.get_unchecked(delimiter + 1..newline)) };
 
     let measurement = fast_f32_parse_encoded(measurement);
 
@@ -208,11 +208,11 @@ fn cpu_count(size: usize) -> usize {
 fn fast_f32_parse_encoded(input: &str) -> i16 {
     let mut bytes = input.as_bytes();
 
-    let negative = bytes[0] == b'-';
+    let negative = unsafe { *bytes.get_unchecked(0) } == b'-';
 
     if negative {
         // Only parse digits.
-        bytes = &bytes[1..];
+        bytes = &unsafe { bytes.get_unchecked(1..) };
     }
 
     let mut val = 0;
